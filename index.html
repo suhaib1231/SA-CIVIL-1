@@ -11,6 +11,10 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     
+    <!-- jsPDF for exporting -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
     <!-- Custom Fonts -->
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap');
@@ -25,6 +29,42 @@
         
         .animate-fade-in { animation: fadeIn 0.5s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Section transitions */
+        .section-transition { transition: all 0.3s ease-in-out; }
+        
+        /* Engineering sheet styling */
+        .eng-sheet {
+            background: linear-gradient(to bottom, #f8fafc, #f1f5f9);
+            border: 1px solid #cbd5e1;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            font-family: 'Times New Roman', serif;
+        }
+        .eng-header {
+            background: linear-gradient(to right, #1e293b, #334155);
+            color: white;
+            border-bottom: 2px solid #f59e0b;
+        }
+        .eng-table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        .eng-table th, .eng-table td {
+            border: 1px solid #cbd5e1;
+            padding: 8px 12px;
+            text-align: center;
+        }
+        .eng-table th {
+            background-color: #e2e8f0;
+            font-weight: bold;
+        }
+        .eng-formula {
+            font-style: italic;
+            background-color: #fef3c7;
+            padding: 4px 8px;
+            border-radius: 4px;
+            border-left: 3px solid #f59e0b;
+        }
     </style>
 
     <script>
@@ -59,13 +99,13 @@
     </div>
 
     <!-- Main Container -->
-    <div id="app-container" class="max-w-5xl mx-auto px-4 pt-16 relative z-10">
+    <div id="app-container" class="max-w-7xl mx-auto px-4 pt-16 relative z-10">
         <!-- Content will be injected here by JavaScript -->
     </div>
 
     <!-- Modal Container (Hidden by default) -->
     <div id="modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col border border-slate-200">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col border border-slate-200">
             <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                 <h3 id="modal-title" class="font-bold text-lg text-slate-800"></h3>
                 <button onclick="closeModal()" class="p-1 hover:bg-slate-200 rounded-full transition-colors"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button>
@@ -80,7 +120,7 @@
         let state = {
             lang: 'ar',
             view: 'home', // home, calculator
-            mode: '',     // wall, slab_load, col_load, beam_design, col_design, slab_design
+            mode: '',     // wall, slab_load, col_load, beam_design, col_design, slab_design, deep_beam
             history: [],
             currentResult: null,
             aiLoading: false
@@ -115,12 +155,14 @@
                 slabLoadDesc: "حساب Dead & Live Loads",
                 colLoadTitle: "تقدير الأعمدة",
                 colLoadDesc: "طريقة المساحة التجميعية",
-                beamDesignTitle: "تصميم الكمرات",
-                beamDesignDesc: "عزم، قص، حديد علوي وسفلي",
+                beamDesignTitle: "تصميم الكمرات العادية",
+                beamDesignDesc: "عزم، قص، حديد علوي وسفلي (L/d > 4)",
                 colDesignTitle: "تصميم الأعمدة",
                 colDesignDesc: "حديد طولي وكانات",
                 slabDesignTitle: "تصميم البلاطات",
-                slabDesignDesc: "بلاطات One-Way & Two-Way",
+                slabDesignDesc: "بلاطات One-Way & Two-Way & Flat Slab",
+                deepBeamTitle: "تصميم Deep Beam",
+                deepBeamDesc: "طريقة Strut and Tie (ACI 318-19) (L/d ≤ 4)",
                 // Fields
                 wallHeight: "الارتفاع (م)",
                 wallThickness: "السماكة (م)",
@@ -129,7 +171,7 @@
                 plasterThickness: "القصارة (م)",
                 windPressure: "ضغط الرياح (kN/m²)",
                 seismicCoefficient: "معامل الزلازل",
-                slabThickness: "سماكة السقف (mm)", // Changed to mm for design, m for load
+                slabThickness: "سماكة السقف (mm)",
                 tileThickness: "سماكة البلاط (م)",
                 liveLoad: "الحمل الحي",
                 customLiveLoad: "قيمة مخصصة (kN/m²)",
@@ -151,11 +193,37 @@
                 longSpan: "البعد الطويل Ly (m)",
                 slabType: "نوع البلاطة",
                 panelType: "حالة البلاطة",
+                flatSlabType: "نوع Flat Slab",
+                dropPanel: "Drop Panel",
+                columnHead: "Column Head",
+                dropPanelWidth: "عرض Drop Panel (m)",
+                dropPanelDepth: "عمق Drop Panel (mm)",
+                columnHeadDiameter: "قطر Column Head (m)",
+                beamWidth: "عرض الكمرة (mm)",
+                beamDepth: "عمق الكمرة (mm)",
+                columnSize: "ابعاد العمود (mm)",
+                deadLoad: "الحمل الميت (kN/m²)",
+                // Deep Beam Fields
+                clearSpan: "البعد الحر بين الدعامات (m)",
+                supportWidth: "عرض الدعامة (mm)",
+                pointLoad: "الحمل المركز (kN)",
+                uniformLoad: "الحمل المنتظم (kN/m)",
+                shearSpan: "مسافة القص a (m)",
+                effectiveDepth: "العمق الفعال d (mm)",
+                supportType: "نوع الدعامات",
+                numSupports: "عدد الدعامات",
                 // Options
                 oneWay: "اتجاه واحد (One-Way)",
                 twoWay: "اتجاهين (Two-Way)",
+                flatSlab: "Flat Slab",
+                flatSlabBasic: "Flat Slab عادي",
+                flatSlabWithDrop: "Flat Slab مع Drop Panels",
+                flatSlabWithBeams: "Flat Slab مع كمرات",
+                flatSlabComplete: "Flat Slab كامل",
                 simplePanel: "بسيطة الارتكاز",
                 continuousPanel: "مستمرة",
+                singleSupport: "دعامة واحدة",
+                twoSupports: "دعامتين",
                 // Results
                 dead: "DEAD", wind: "WIND", seismic: "SEISMIC",
                 designValue: "القيمة التصميمية",
@@ -173,11 +241,77 @@
                 mainReinf: "الحديد الرئيسي", ties: "الكانات",
                 designMoment: "العزم التصميمي", reqSteel: "الحديد المطلوب", mesh: "الشبكة",
                 shortDir: "اتجاه قصير (Lx)", longDir: "اتجاه طويل (Ly)",
+                middleStrip: "Middle Strip", columnStrip: "Column Strip",
+                positiveMoment: "عزم موجب", negativeMoment: "عزم سالب",
+                totalMoment: "العزم الكلي",
+                // Deep Beam Results
+                strutCapacity: "قدرة ال Strut",
+                tieCapacity: "قدرة ال Tie",
+                nodeCapacity: "قدرة ال Node",
+                strutAngle: "زاوية ال Strut (درجة)",
+                strutWidth: "عرض ال Strut (mm)",
+                tieForce: "قوة ال Tie (kN)",
+                strutForce: "قوة ال Strut (kN)",
+                nodeStress: "إجهاد ال Node (MPa)",
+                minVertReinf: "الحديد الرأسي الأدنى",
+                minHorzReinf: "الحديد الأفقي الأدنى",
+                vertReinfSpacing: "مسافة الحديد الرأسي (mm)",
+                horzReinfSpacing: "مسافة الحديد الأفقي (mm)",
+                beamClassification: "تصنيف الكمرة",
+                ordinaryBeam: "كمرة عادية",
+                deepBeam: "Deep Beam",
                 // AI
                 aiTitle: "المستشار الهندسي الذكي ✨",
                 aiDesc: "تحليل فني وتوصيات فورية",
                 aiButton: "تحليل النتائج (AI)",
                 aiLoading: "جاري التحليل...",
+                // New translations
+                materials: {
+                    concrete_block: "طوب خرساني",
+                    concrete: "خرسانة",
+                    brick: "طوب",
+                    custom: "مخصص"
+                },
+                liveLoadTypes: {
+                    residential: "سكني (1.92 kN/m²)",
+                    office: "مكاتب (2.39 kN/m²)",
+                    retail: "تجاري (4.79 kN/m²)",
+                    custom: "مخصص"
+                },
+                confirmDelete: "هل أنت متأكد من الحذف؟",
+                confirmClear: "هل أنت متأكد من مسح السجل؟",
+                yes: "نعم",
+                no: "لا",
+                exportResults: "تصدير النتائج",
+                loading: "جاري التحميل...",
+                calculating: "جاري الحساب...",
+                error: "خطأ",
+                invalidInput: "قيمة غير صالحة",
+                inputRequired: "هذا الحقل مطلوب",
+                valueTooSmall: "القيمة صغيرة جداً",
+                valueTooLarge: "القيمة كبيرة جداً",
+                // New fields for continuous beams
+                beamType: "نوع الكمرة",
+                beamTypeSimple: "بسيطة",
+                beamTypeContinuous: "مستمرة",
+                numSpans: "عدد المجازات",
+                span1: "المجاز 1 (m)",
+                span2: "المجاز 2 (m)",
+                span3: "المجاز 3 (m)",
+                span4: "المجاز 4 (m)",
+                // New fields for column design
+                columnType: "نوع العمود",
+                shortColumn: "عمود قصير",
+                longColumn: "عمود طويل",
+                columnHeight: "ارتفاع العمود (m)",
+                kFactor: "معامل الطول الفعال K",
+                // New fields for flat slab with beams
+                beamSpacing: "مسافة الكمرات (m)",
+                beamReinforcement: "تسليح الكمرات",
+                // Export
+                exportToPDF: "تصدير إلى PDF",
+                exportSuccess: "تم التصدير بنجاح",
+                exportError: "خطأ في التصدير"
             },
             en: {
                 title: "SA CIVIL",
@@ -204,12 +338,14 @@
                 slabLoadDesc: "Dead & Live Loads",
                 colLoadTitle: "Column Estimation",
                 colLoadDesc: "Tributary Area Method",
-                beamDesignTitle: "Beam Design",
-                beamDesignDesc: "Flexure & Shear",
+                beamDesignTitle: "Ordinary Beam Design",
+                beamDesignDesc: "Flexure & Shear (L/d > 4)",
                 colDesignTitle: "Column Design",
                 colDesignDesc: "Short Tied Columns",
                 slabDesignTitle: "Slab Design",
-                slabDesignDesc: "One-Way & Two-Way",
+                slabDesignDesc: "One-Way & Two-Way & Flat Slab",
+                deepBeamTitle: "Deep Beam Design",
+                deepBeamDesc: "Strut and Tie Method (ACI 318-19) (L/d ≤ 4)",
                 wallHeight: "Height (m)",
                 wallThickness: "Thickness (m)",
                 wallMaterial: "Material",
@@ -217,7 +353,7 @@
                 plasterThickness: "Plaster (m)",
                 windPressure: "Wind Pressure",
                 seismicCoefficient: "Seismic Coeff.",
-                slabThickness: "Slab Thickness", // m for load, mm for design logic handled in render
+                slabThickness: "Slab Thickness (mm)",
                 tileThickness: "Tile Thickness (m)",
                 liveLoad: "Live Load",
                 customLiveLoad: "Custom Value",
@@ -239,10 +375,36 @@
                 longSpan: "Long Span Ly (m)",
                 slabType: "Slab Type",
                 panelType: "Panel Type",
+                flatSlabType: "Flat Slab Type",
+                dropPanel: "Drop Panel",
+                columnHead: "Column Head",
+                dropPanelWidth: "Drop Panel Width (m)",
+                dropPanelDepth: "Drop Panel Depth (mm)",
+                columnHeadDiameter: "Column Head Diameter (m)",
+                beamWidth: "Beam Width (mm)",
+                beamDepth: "Beam Depth (mm)",
+                columnSize: "Column Size (mm)",
+                deadLoad: "Dead Load (kN/m²)",
+                // Deep Beam Fields
+                clearSpan: "Clear Span (m)",
+                supportWidth: "Support Width (mm)",
+                pointLoad: "Point Load (kN)",
+                uniformLoad: "Uniform Load (kN/m)",
+                shearSpan: "Shear Span a (m)",
+                effectiveDepth: "Effective Depth d (mm)",
+                supportType: "Support Type",
+                numSupports: "Number of Supports",
                 oneWay: "One-Way",
                 twoWay: "Two-Way",
+                flatSlab: "Flat Slab",
+                flatSlabBasic: "Basic Flat Slab",
+                flatSlabWithDrop: "Flat Slab with Drop Panels",
+                flatSlabWithBeams: "Flat Slab with Beams",
+                flatSlabComplete: "Complete Flat Slab",
                 simplePanel: "Simple",
                 continuousPanel: "Continuous",
+                singleSupport: "Single Support",
+                twoSupports: "Two Supports",
                 dead: "DEAD", wind: "WIND", seismic: "SEISMIC",
                 designValue: "Design Value",
                 governing: "Governing Case",
@@ -259,10 +421,76 @@
                 mainReinf: "Main Bars", ties: "Ties",
                 designMoment: "Moment", reqSteel: "Req. Ast", mesh: "Mesh",
                 shortDir: "Short Dir (Lx)", longDir: "Long Dir (Ly)",
+                middleStrip: "Middle Strip", columnStrip: "Column Strip",
+                positiveMoment: "Positive Moment", negativeMoment: "Negative Moment",
+                totalMoment: "Total Moment",
+                // Deep Beam Results
+                strutCapacity: "Strut Capacity",
+                tieCapacity: "Tie Capacity",
+                nodeCapacity: "Node Capacity",
+                strutAngle: "Strut Angle (deg)",
+                strutWidth: "Strut Width (mm)",
+                tieForce: "Tie Force (kN)",
+                strutForce: "Strut Force (kN)",
+                nodeStress: "Node Stress (MPa)",
+                minVertReinf: "Min Vertical Reinf",
+                minHorzReinf: "Min Horizontal Reinf",
+                vertReinfSpacing: "Vert. Reinf Spacing (mm)",
+                horzReinfSpacing: "Horz. Reinf Spacing (mm)",
+                beamClassification: "Beam Classification",
+                ordinaryBeam: "Ordinary Beam",
+                deepBeam: "Deep Beam",
                 aiTitle: "AI Consultant ✨",
                 aiDesc: "Instant Technical Analysis",
                 aiButton: "Analyze (AI)",
                 aiLoading: "Analyzing...",
+                // New translations
+                materials: {
+                    concrete_block: "Concrete Block",
+                    concrete: "Concrete",
+                    brick: "Brick",
+                    custom: "Custom"
+                },
+                liveLoadTypes: {
+                    residential: "Residential (1.92 kN/m²)",
+                    office: "Office (2.39 kN/m²)",
+                    retail: "Retail (4.79 kN/m²)",
+                    custom: "Custom"
+                },
+                confirmDelete: "Are you sure you want to delete?",
+                confirmClear: "Are you sure you want to clear the log?",
+                yes: "Yes",
+                no: "No",
+                exportResults: "Export Results",
+                loading: "Loading...",
+                calculating: "Calculating...",
+                error: "Error",
+                invalidInput: "Invalid value",
+                inputRequired: "This field is required",
+                valueTooSmall: "Value too small",
+                valueTooLarge: "Value too large",
+                // New fields for continuous beams
+                beamType: "Beam Type",
+                beamTypeSimple: "Simple",
+                beamTypeContinuous: "Continuous",
+                numSpans: "Number of Spans",
+                span1: "Span 1 (m)",
+                span2: "Span 2 (m)",
+                span3: "Span 3 (m)",
+                span4: "Span 4 (m)",
+                // New fields for column design
+                columnType: "Column Type",
+                shortColumn: "Short Column",
+                longColumn: "Long Column",
+                columnHeight: "Column Height (m)",
+                kFactor: "Effective Length Factor K",
+                // New fields for flat slab with beams
+                beamSpacing: "Beam Spacing (m)",
+                beamReinforcement: "Beam Reinforcement",
+                // Export
+                exportToPDF: "Export to PDF",
+                exportSuccess: "Exported successfully",
+                exportError: "Export error"
             }
         };
 
@@ -279,26 +507,143 @@
             renderApp();
         }
 
-        function saveHistory(elementName, result, desc) {
+        function saveHistory(elementName, result, desc, details) {
             const newItem = {
                 id: Date.now(),
                 date: new Date().toISOString(),
                 type: state.mode,
                 elementName: elementName || `Elem ${state.history.filter(h => h.type === state.mode).length + 1}`,
                 result,
-                desc
+                desc,
+                details: details || {}
             };
             state.history.unshift(newItem);
+            // Save to localStorage
+            localStorage.setItem('sa-civil-history', JSON.stringify(state.history));
+        }
+
+        function loadHistory() {
+            const saved = localStorage.getItem('sa-civil-history');
+            if (saved) {
+                state.history = JSON.parse(saved);
+            }
         }
 
         function deleteHistory(id) {
             state.history = state.history.filter(h => h.id !== id);
+            localStorage.setItem('sa-civil-history', JSON.stringify(state.history));
             renderHistoryModal();
         }
 
         function clearHistory() {
             state.history = state.history.filter(h => h.type !== state.mode);
+            localStorage.setItem('sa-civil-history', JSON.stringify(state.history));
             renderHistoryModal();
+        }
+
+        // --- Export to PDF ---
+        function exportToPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('p', 'mm', 'a4');
+            const element = document.getElementById('results-container');
+            
+            // Add watermark
+            doc.setFontSize(8);
+            doc.setTextColor(200, 200, 200);
+            doc.text('SA CIVIL - Eng. Sohaib Al-Nuaimi', 105, 290, { align: 'center' });
+            
+            // Reset text color
+            doc.setTextColor(0, 0, 0);
+            
+            // Add header
+            doc.setFontSize(16);
+            doc.setFont('helvetica', 'bold');
+            doc.text('SA CIVIL - Structural Design Report', 105, 20, { align: 'center' });
+            
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Element: ${state.currentElementName || 'N/A'}`, 20, 35);
+            doc.text(`Type: ${t(state.mode + 'Title')}`, 20, 42);
+            doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, 49);
+            
+            // Add design details
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.text('Design Results', 20, 65);
+            
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            
+            // Add design table
+            if (state.currentResult) {
+                let yPos = 75;
+                
+                if (state.currentResult.type === 'beam_design') {
+                    doc.text(`Beam Type: ${state.currentResult.beamType}`, 20, yPos);
+                    yPos += 7;
+                    doc.text(`Bottom Reinforcement: ${state.currentResult.n_bot}ϕ${state.currentResult.bar_bot}`, 20, yPos);
+                    yPos += 7;
+                    doc.text(`Top Reinforcement: ${state.currentResult.n_top}ϕ${state.currentResult.bar_top}`, 20, yPos);
+                    yPos += 7;
+                    doc.text(`Stirrups: ${state.currentResult.stirrups}`, 20, yPos);
+                    yPos += 7;
+                    doc.text(`Reinforcement Ratio: ${state.currentResult.rho.toFixed(2)}%`, 20, yPos);
+                    yPos += 7;
+                    doc.text(`Status: ${state.currentResult.shearMsg}`, 20, yPos);
+                } else if (state.currentResult.type === 'col_design') {
+                    doc.text(`Column Type: ${state.currentResult.columnType || 'Short Column'}`, 20, yPos);
+                    yPos += 7;
+                    doc.text(`Main Reinforcement: ${state.currentResult.n_bars}ϕ${state.currentResult.bar}`, 20, yPos);
+                    yPos += 7;
+                    doc.text(`Ties: ϕ${state.currentResult.tie}@${state.currentResult.s_tie}mm`, 20, yPos);
+                    yPos += 7;
+                    doc.text(`Reinforcement Ratio: ${state.currentResult.rho.toFixed(2)}%`, 20, yPos);
+                    yPos += 7;
+                    doc.text(`Status: ${state.currentResult.status}`, 20, yPos);
+                } else if (state.currentResult.type === 'slab_design') {
+                    doc.text(`Slab Type: ${state.currentResult.subtype}`, 20, yPos);
+                    yPos += 7;
+                    doc.text(`Design: ${state.currentResult.design}`, 20, yPos);
+                    yPos += 7;
+                    if (state.currentResult.moments) {
+                        doc.text(`Moments: ${JSON.stringify(state.currentResult.moments)}`, 20, yPos);
+                    }
+                }
+                
+                // Add calculations
+                yPos += 15;
+                doc.setFontSize(12);
+                doc.setFont('helvetica', 'bold');
+                doc.text('Detailed Calculations (ACI 318-19)', 20, yPos);
+                
+                doc.setFontSize(9);
+                doc.setFont('helvetica', 'normal');
+                yPos += 10;
+                
+                if (state.currentResult.proof) {
+                    state.currentResult.proof.forEach(item => {
+                        if (yPos > 270) {
+                            doc.addPage();
+                            yPos = 20;
+                        }
+                        
+                        doc.text(`${item.t}:`, 20, yPos);
+                        yPos += 5;
+                        doc.text(`Formula: ${item.f}`, 25, yPos);
+                        yPos += 5;
+                        doc.text(`Calculation: ${item.c}`, 25, yPos);
+                        yPos += 5;
+                        doc.text(`Result: ${item.r}`, 25, yPos);
+                        yPos += 10;
+                    });
+                }
+            }
+            
+            // Save the PDF
+            doc.save(`SA_CIVIL_${state.currentElementName || 'Design'}_${new Date().toISOString().slice(0,10)}.pdf`);
+            
+            // Show success message
+            alert(t('exportSuccess'));
         }
 
         // --- Renderers ---
@@ -339,6 +684,7 @@
                             ${renderNavButton('beam_design', 'beamDesignTitle', 'beamDesignDesc', 'hammer', 'blue')}
                             ${renderNavButton('col_design', 'colDesignTitle', 'colDesignDesc', 'building-2', 'orange')}
                             ${renderNavButton('slab_design', 'slabDesignTitle', 'slabDesignDesc', 'box-select', 'teal')}
+                            ${renderNavButton('deep_beam', 'deepBeamTitle', 'deepBeamDesc', 'git-branch', 'violet')}
                         </div>
                     </div>
                     <div class="text-center text-xs text-slate-400 py-12">SA CIVIL © 2024 | ${t('designBy')}</div>
@@ -354,6 +700,7 @@
                 blue: 'text-blue-800 hover:border-blue-400 hover:bg-blue-50',
                 orange: 'text-orange-800 hover:border-orange-400 hover:bg-orange-50',
                 teal: 'text-teal-800 hover:border-teal-400 hover:bg-teal-50',
+                violet: 'text-violet-800 hover:border-violet-400 hover:bg-violet-50',
             };
             return `
                 <button onclick="navigateTo('${modeKey}')" class="group relative flex flex-col items-center justify-center p-6 bg-white border border-slate-200 rounded-2xl shadow-sm transition-all duration-300 hover:shadow-lg hover:-translate-y-1 ${colors[color]}">
@@ -387,21 +734,25 @@
                 col_load: 'border-amber-800 text-amber-600',
                 beam_design: 'border-blue-800 text-blue-600',
                 col_design: 'border-orange-800 text-orange-600',
-                slab_design: 'border-teal-800 text-teal-600'
+                slab_design: 'border-teal-800 text-teal-600',
+                deep_beam: 'border-violet-800 text-violet-600'
             };
             const btnMap = {
                 wall: 'bg-slate-900', slab_load: 'bg-emerald-800', col_load: 'bg-amber-800',
-                beam_design: 'bg-blue-800', col_design: 'bg-orange-800', slab_design: 'bg-teal-800'
+                beam_design: 'bg-blue-800', col_design: 'bg-orange-800', slab_design: 'bg-teal-800',
+                deep_beam: 'bg-violet-800'
             };
 
             const titleKey = {
                 wall: 'wallLoadTitle', slab_load: 'slabLoadTitle', col_load: 'colLoadTitle',
-                beam_design: 'beamDesignTitle', col_design: 'colDesignTitle', slab_design: 'slabDesignTitle'
+                beam_design: 'beamDesignTitle', col_design: 'colDesignTitle', slab_design: 'slabDesignTitle',
+                deep_beam: 'deepBeamTitle'
             }[state.mode];
 
             const descKey = {
                 wall: 'wallLoadDesc', slab_load: 'slabLoadDesc', col_load: 'colLoadDesc',
-                beam_design: 'beamDesignDesc', col_design: 'colDesignDesc', slab_design: 'slabDesignDesc'
+                beam_design: 'beamDesignDesc', col_design: 'colDesignDesc', slab_design: 'slabDesignDesc',
+                deep_beam: 'deepBeamDesc'
             }[state.mode];
 
             container.innerHTML = `
@@ -446,80 +797,223 @@
 
         function renderFormInputs(container) {
             let html = '';
-            const inp = (name, label, step='0.01', type='number', placeholder='') => `
-                <div><label class="block text-sm font-medium text-slate-700 mb-1">${t(label)}</label>
-                <input type="${type}" name="${name}" step="${step}" placeholder="${placeholder}" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"></div>
+            const inp = (name, label, step='0.01', type='number', placeholder='', min='0', max='10000', value='') => `
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">${t(label)}</label>
+                    <input type="${type}" name="${name}" step="${step}" placeholder="${placeholder}" min="${min}" max="${max}" value="${value}" required 
+                           class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                </div>
             `;
-            const sel = (name, label, options) => `
+            const sel = (name, label, options, selected='') => `
                  <div><label class="block text-sm font-medium text-slate-700 mb-1">${t(label)}</label>
                  <div class="relative">
                     <select name="${name}" class="w-full appearance-none rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
-                        ${options.map(o => `<option value="${o.val}">${o.text}</option>`).join('')}
+                        ${options.map(o => `<option value="${o.val}" ${o.val===selected?'selected':''}>${o.text}</option>`).join('')}
                     </select>
                     <div class="pointer-events-none absolute top-1/2 -translate-y-1/2 text-slate-500 ${state.lang==='ar'?'left-3':'right-3'}"><i data-lucide="chevrons-down" class="w-4 h-4"></i></div>
                  </div></div>
             `;
 
             if(state.mode === 'wall') {
-                html += inp('wallHeight', 'wallHeight');
-                html += inp('wallThickness', 'wallThickness');
+                html += inp('wallHeight', 'wallHeight', '0.01', 'number', '', '0.1', '50', '3.0');
+                html += inp('wallThickness', 'wallThickness', '0.01', 'number', '', '0.05', '1', '0.2');
                 html += sel('wallMaterial', 'wallMaterial', [
                     {val:'concrete_block', text: t('materials').concrete_block},
                     {val:'concrete', text: t('materials').concrete},
                     {val:'brick', text: t('materials').brick},
                     {val:'custom', text: t('materials').custom}
-                ]);
-                html += inp('customDensity', 'customDensity', '0.1'); // Should handle visibility via JS ideally, keeping simple here
-                html += inp('plasterThickness', 'plasterThickness');
-                html += inp('windPressure', 'windPressure', '0.1');
-                html += inp('seismicCoefficient', 'seismicCoefficient');
+                ], 'concrete_block');
+                html += inp('customDensity', 'customDensity', '0.1', 'number', '', '5', '50', '19');
+                html += inp('plasterThickness', 'plasterThickness', '0.01', 'number', '', '0', '0.1', '0.02');
+                html += inp('windPressure', 'windPressure', '0.1', 'number', '', '0', '10', '0.8');
+                html += inp('seismicCoefficient', 'seismicCoefficient', '0.01', 'number', '', '0', '1', '0.1');
             } else if (state.mode === 'slab_load') {
-                html += inp('slabThickness', 'slabThickness'); // m
-                html += inp('tileThickness', 'tileThickness');
-                html += inp('plasterThickness', 'plasterThickness');
+                html += inp('slabThickness', 'slabThickness', '0.01', 'number', '', '0.05', '1', '0.15');
+                html += inp('tileThickness', 'tileThickness', '0.01', 'number', '', '0', '0.1', '0.03');
+                html += inp('plasterThickness', 'plasterThickness', '0.01', 'number', '', '0', '0.1', '0.02');
                 html += sel('liveLoad', 'liveLoad', [
                     {val:'residential', text: t('liveLoadTypes').residential},
                     {val:'office', text: t('liveLoadTypes').office},
                     {val:'retail', text: t('liveLoadTypes').retail},
                     {val:'custom', text: t('liveLoadTypes').custom}
-                ]);
-                html += inp('customLiveLoad', 'customLiveLoad', '0.1');
+                ], 'residential');
+                html += inp('customLiveLoad', 'customLiveLoad', '0.1', 'number', '', '0', '20', '1.92');
             } else if (state.mode === 'col_load') {
-                html += inp('tributaryArea', 'tributaryArea', '0.1');
-                html += inp('numFloors', 'numFloors', '1');
-                html += inp('avgDeadLoad', 'avgDeadLoad', '0.1');
-                html += inp('avgLiveLoad', 'avgLiveLoad', '0.1');
+                html += inp('tributaryArea', 'tributaryArea', '0.1', 'number', '', '1', '1000', '25');
+                html += inp('numFloors', 'numFloors', '1', 'number', '', '1', '100', '5');
+                html += inp('avgDeadLoad', 'avgDeadLoad', '0.1', 'number', '', '1', '50', '6');
+                html += inp('avgLiveLoad', 'avgLiveLoad', '0.1', 'number', '', '1', '50', '3');
             } else if (state.mode === 'beam_design') {
-                html += inp('width', 'width', '1');
-                html += inp('depth', 'depth', '1');
-                html += inp('span', 'span', '0.1');
-                html += inp('slabWidth', 'slabWidth', '0.1');
-                html += inp('wallHeight', 'beamWallHeight', '0.1');
-                html += inp('wallThickness', 'wallThickness');
-                html += inp('slabLoad', 'slabLoad', '0.1');
-                html += inp('fc', 'fc', '1');
-                html += inp('fy', 'fy', '1');
+                html += sel('beamType', 'beamType', [
+                    {val:'simple', text: t('beamTypeSimple')},
+                    {val:'continuous', text: t('beamTypeContinuous')}
+                ], 'simple');
+                html += inp('width', 'width', '1', 'number', '', '150', '1000', '300');
+                html += inp('depth', 'depth', '1', 'number', '', '200', '1500', '600');
+                
+                // Dynamic spans based on beam type
+                html += '<div id="beam-spans-container"></div>';
+                
+                html += inp('slabWidth', 'slabWidth', '0.1', 'number', '', '0.5', '10', '3');
+                html += inp('wallHeight', 'beamWallHeight', '0.1', 'number', '', '0', '10', '3');
+                html += inp('wallThickness', 'wallThickness', '0.01', 'number', '', '0', '0.5', '0.2');
+                html += inp('slabLoad', 'slabLoad', '0.1', 'number', '', '1', '50', '12');
+                html += inp('fc', 'fc', '1', 'number', '', '20', '60', '25');
+                html += inp('fy', 'fy', '1', 'number', '', '300', '600', '420');
             } else if (state.mode === 'col_design') {
-                html += inp('b', 'width', '1');
-                html += inp('h', 'depth', '1');
-                html += inp('pu', 'axialLoad', '1');
-                html += inp('fc', 'fc', '1');
-                html += inp('fy', 'fy', '1');
-                html += inp('targetRho', 'targetRho', '0.1', 'number', 'e.g. 1.5');
+                html += sel('columnType', 'columnType', [
+                    {val:'short', text: t('shortColumn')},
+                    {val:'long', text: t('longColumn')}
+                ], 'short');
+                html += inp('b', 'width', '1', 'number', '', '200', '1000', '300');
+                html += inp('h', 'depth', '1', 'number', '', '200', '1000', '300');
+                html += inp('columnHeight', 'columnHeight', '0.1', 'number', '', '2', '20', '3');
+                html += inp('kFactor', 'kFactor', '0.1', 'number', '', '0.5', '2', '1');
+                html += inp('pu', 'axialLoad', '1', 'number', '', '100', '10000', '1500');
+                html += inp('fc', 'fc', '1', 'number', '', '20', '60', '25');
+                html += inp('fy', 'fy', '1', 'number', '', '300', '600', '420');
+                html += inp('targetRho', 'targetRho', '0.1', 'number', 'e.g. 1.5', '0.5', '8', '2');
             } else if (state.mode === 'slab_design') {
-                 html += sel('slabType', 'slabType', [{val:'one_way', text:t('oneWay')}, {val:'two_way', text:t('twoWay')}]);
-                 html += inp('h', 'slabThickness', '1'); // mm
-                 html += inp('shortSpan', 'shortSpan', '0.1');
-                 html += inp('longSpan', 'longSpan', '0.1'); // Show always for simplicity in this vanilla version or add event listener
-                 html += inp('load', 'slabLoad', '0.1');
-                 html += inp('fc', 'fc', '1');
-                 html += inp('fy', 'fy', '1');
+                 html += sel('slabType', 'slabType', [
+                     {val:'one_way', text:t('oneWay')}, 
+                     {val:'two_way', text:t('twoWay')},
+                     {val:'flat_slab_basic', text:t('flatSlabBasic')},
+                     {val:'flat_slab_with_drop', text:t('flatSlabWithDrop')},
+                     {val:'flat_slab_with_beams', text:t('flatSlabWithBeams')},
+                     {val:'flat_slab_complete', text:t('flatSlabComplete')}
+                 ], 'one_way');
+                 html += inp('h', 'slabThickness', '1', 'number', '', '100', '500', '200');
+                 html += inp('shortSpan', 'shortSpan', '0.1', 'number', '', '1', '20', '5');
+                 html += inp('longSpan', 'longSpan', '0.1', 'number', '', '1', '20', '7');
+                 html += inp('deadLoad', 'deadLoad', '0.1', 'number', '', '2', '20', '6');
+                 html += inp('liveLoad', 'liveLoad', '0.1', 'number', '', '1', '10', '3');
+                 html += inp('fc', 'fc', '1', 'number', '', '20', '60', '25');
+                 html += inp('fy', 'fy', '1', 'number', '', '300', '600', '420');
+                 
+                 // Additional inputs for different slab types
+                 html += '<div id="additional-inputs"></div>';
+            } else if (state.mode === 'deep_beam') {
+                html += inp('width', 'width', '1', 'number', '', '200', '1000', '300');
+                html += inp('depth', 'depth', '1', 'number', '', '500', '3000', '1200');
+                html += inp('clearSpan', 'clearSpan', '0.1', 'number', '', '1', '20', '4');
+                html += inp('supportWidth', 'supportWidth', '1', 'number', '', '200', '1000', '400');
+                html += sel('numSupports', 'numSupports', [
+                    {val:'1', text: t('singleSupport')},
+                    {val:'2', text: t('twoSupports')}
+                ], '2');
+                html += inp('pointLoad', 'pointLoad', '1', 'number', '', '0', '5000', '800');
+                html += inp('uniformLoad', 'uniformLoad', '0.1', 'number', '', '0', '200', '50');
+                html += inp('shearSpan', 'shearSpan', '0.1', 'number', '', '0.5', '10', '1.5');
+                html += inp('effectiveDepth', 'effectiveDepth', '1', 'number', '', '300', '2800', '1100');
+                html += inp('fc', 'fc', '1', 'number', '', '20', '60', '30');
+                html += inp('fy', 'fy', '1', 'number', '', '300', '600', '420');
+            }
+
+            container.innerHTML = html;
+
+            // Add event listeners for dynamic inputs
+            const beamTypeSelect = document.querySelector('select[name="beamType"]');
+            if (beamTypeSelect) {
+                beamTypeSelect.addEventListener('change', updateBeamSpans);
+                updateBeamSpans();
+            }
+
+            const slabTypeSelect = document.querySelector('select[name="slabType"]');
+            if (slabTypeSelect) {
+                slabTypeSelect.addEventListener('change', updateAdditionalInputs);
+                updateAdditionalInputs();
+            }
+        }
+
+        function updateBeamSpans() {
+            const container = document.getElementById('beam-spans-container');
+            const beamType = document.querySelector('select[name="beamType"]').value;
+            let html = '';
+
+            if (beamType === 'simple') {
+                html += inp('span', 'span', '0.1', 'number', '', '1', '30', '6');
+            } else {
+                html += sel('numSpans', 'numSpans', [
+                    {val:'2', text: '2'},
+                    {val:'3', text: '3'},
+                    {val:'4', text: '4'}
+                ], '2');
+                
+                html += '<div id="continuous-spans-container"></div>';
+            }
+
+            container.innerHTML = html;
+            
+            // Update continuous spans if needed
+            const numSpansSelect = document.querySelector('select[name="numSpans"]');
+            if (numSpansSelect) {
+                numSpansSelect.addEventListener('change', updateContinuousSpans);
+                updateContinuousSpans();
+            }
+            
+            lucide.createIcons();
+        }
+
+        function updateContinuousSpans() {
+            const container = document.getElementById('continuous-spans-container');
+            const numSpans = document.querySelector('select[name="numSpans"]').value;
+            let html = '';
+            
+            for (let i = 1; i <= numSpans; i++) {
+                html += inp(`span${i}`, `span${i}`, '0.1', 'number', '', '1', '30', `${4 + i}`);
+            }
+            
+            container.innerHTML = html;
+        }
+
+        function updateAdditionalInputs() {
+            const container = document.getElementById('additional-inputs');
+            const slabType = document.querySelector('select[name="slabType"]').value;
+            let html = '';
+
+            if (slabType.includes('flat_slab')) {
+                html += `
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">${t('columnSize')}</label>
+                        <input type="number" name="columnSize" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" min="200" max="1000" value="400" required>
+                    </div>
+                `;
+
+                if (slabType.includes('drop') || slabType === 'flat_slab_complete') {
+                    html += `
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">${t('dropPanelWidth')}</label>
+                            <input type="number" name="dropPanelWidth" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" min="1" max="5" value="2" step="0.1" required>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">${t('dropPanelDepth')}</label>
+                            <input type="number" name="dropPanelDepth" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" min="50" max="300" value="150" required>
+                        </div>
+                    `;
+                }
+
+                if (slabType.includes('beams') || slabType === 'flat_slab_complete') {
+                    html += `
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">${t('beamWidth')}</label>
+                            <input type="number" name="beamWidth" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" min="200" max="800" value="300" required>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">${t('beamDepth')}</label>
+                            <input type="number" name="beamDepth" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" min="300" max="1200" value="600" required>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">${t('beamSpacing')}</label>
+                            <input type="number" name="beamSpacing" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" min="2" max="10" value="5" step="0.1" required>
+                        </div>
+                    `;
+                }
             }
 
             container.innerHTML = html;
         }
 
-        // --- Calculations Logic (ACI 318-19) ---
+        // --- Enhanced Calculations Logic (ACI 318-19) ---
         function handleCalculate(e) {
             e.preventDefault();
             const formData = new FormData(e.target);
@@ -530,166 +1024,862 @@
             const n = (key) => Number(data[key] || 0);
 
             if (state.mode === 'wall') {
+                // Enhanced wall load calculations according to ACI 318-19
                 const den = data.wallMaterial === 'custom' ? n('customDensity') : {concrete:25, concrete_block:19, brick:18, lightweight:12}[data.wallMaterial] || 19;
                 const dl = den * n('wallThickness') * n('wallHeight') + 20 * n('plasterThickness') * 2 * n('wallHeight');
                 const wl = n('windPressure') * n('wallHeight');
                 const sl = n('seismicCoefficient') * dl;
-                const c = [1.4*dl, 1.2*dl+1.6*wl, 1.2*dl+1.0*sl, 0.9*dl+1.6*wl, 0.9*dl+1.0*sl];
-                const gov = Math.max(...c);
+                
+                // ACI 318-19 Load Combinations
+                const c = [
+                    {id:'U1', f:'1.4D', v:1.4*dl},
+                    {id:'U2', f:'1.2D+1.6L+0.5(Lr or S or R)', v:1.2*dl+1.6*0}, // Assuming no live load on wall
+                    {id:'U3', f:'1.2D+1.6(Lr or S or R)+(1.0L or 0.5W)', v:1.2*dl+1.6*wl},
+                    {id:'U4', f:'1.2D+1.0W+1.0L+0.5(Lr or S or R)', v:1.2*dl+1.0*wl},
+                    {id:'U5', f:'1.2D+1.0E+1.0L+0.2S', v:1.2*dl+1.0*sl},
+                    {id:'U6', f:'0.9D+1.0W', v:0.9*dl+1.0*wl},
+                    {id:'U7', f:'0.9D+1.0E', v:0.9*dl+1.0*sl}
+                ];
+                
+                const gov = Math.max(...c.map(item => item.v));
                 res = { 
                     type: 'wall', 
                     vals: { DL: dl, WL: wl, SL: sl }, 
                     gov: gov, 
                     unit: 'kN/m',
-                    combos: [
-                        {id:'U1', f:'1.4D', v:c[0]}, {id:'U2', f:'1.2D+1.6W', v:c[1]}, {id:'U3', f:'1.2D+1.0E', v:c[2]},
-                        {id:'U4', f:'0.9D+1.6W', v:c[3]}, {id:'U5', f:'0.9D+1.0E', v:c[4]}
-                    ] 
+                    combos: c
                 };
             } else if (state.mode === 'slab_load') {
-                const dl = (25 * n('slabThickness')) + (23 * n('tileThickness')) + (20 * n('plasterThickness')) + 1.0;
+                // Enhanced slab load calculations according to ACI 318-19
+                const dl = (25 * n('slabThickness')/1000) + (23 * n('tileThickness')) + (20 * n('plasterThickness')) + 1.0;
                 const ll = data.liveLoad === 'custom' ? n('customLiveLoad') : {residential:1.92, office:2.39, retail:4.79, custom:2}[data.liveLoad];
-                const c = [1.4*dl, 1.2*dl+1.6*ll];
-                const gov = Math.max(...c);
+                
+                // ACI 318-19 Load Combinations
+                const c = [
+                    {id:'U1', f:'1.4D', v:1.4*dl},
+                    {id:'U2', f:'1.2D+1.6L+0.5(Lr or S or R)', v:1.2*dl+1.6*ll},
+                    {id:'U3', f:'1.2D+1.6(Lr or S or R)+(1.0L or 0.5W)', v:1.2*dl+1.0*ll}, // Assuming no roof load
+                    {id:'U4', f:'1.2D+1.0W+1.0L+0.5(Lr or S or R)', v:1.2*dl+1.0*ll}, // Assuming no wind
+                    {id:'U5', f:'0.9D+1.0W', v:0.9*dl} // Assuming no wind
+                ];
+                
+                const gov = Math.max(...c.map(item => item.v));
                 res = {
                     type: 'slab_load',
                     vals: { DL: dl, LL: ll },
                     gov: gov,
                     unit: 'kN/m²',
-                    combos: [{id:'U1', f:'1.4D', v:c[0]}, {id:'U2', f:'1.2D+1.6L', v:c[1]}]
+                    combos: c
                 };
             } else if (state.mode === 'col_load') {
+                // Enhanced column load calculations
                 const pd = n('tributaryArea') * n('numFloors') * n('avgDeadLoad');
                 const pl = n('tributaryArea') * n('numFloors') * n('avgLiveLoad');
-                const pu = 1.2*pd + 1.6*pl;
+                
+                // ACI 318-19 Load Combinations
+                const pu1 = 1.4 * pd;
+                const pu2 = 1.2 * pd + 1.6 * pl;
+                const pu3 = 1.2 * pd + 1.0 * pl; // For cases with wind or seismic
+                
+                const pu = Math.max(pu1, pu2, pu3);
                 res = {
                     type: 'col_load',
                     gov: pu,
                     unit: 'kN',
-                    combos: [{id:'P_DL', f:'Area×Floors×DL', v:pd}, {id:'P_LL', f:'Area×Floors×LL', v:pl}, {id:'Pu', f:'1.2DL+1.6LL', v:pu}]
+                    combos: [
+                        {id:'P_DL', f:'Area×Floors×DL', v:pd}, 
+                        {id:'P_LL', f:'Area×Floors×LL', v:pl}, 
+                        {id:'Pu1', f:'1.4DL', v:pu1},
+                        {id:'Pu2', f:'1.2DL+1.6LL', v:pu2},
+                        {id:'Pu3', f:'1.2DL+1.0LL', v:pu3}
+                    ]
                 };
             } else if (state.mode === 'beam_design') {
-                const b = n('width'), h = n('depth'), L = n('span');
-                const wu = (b*h/1e6*25*1.2) + (n('wallThickness')*n('wallHeight')*19*1.2) + (n('slabLoad')*n('slabWidth'));
-                const mu = wu*L*L/8, vu = wu*L/2;
-                const d = h - 65, phi = 0.9, fy = n('fy'), fc = n('fc');
+                // Enhanced beam design according to ACI 318-19
+                const beamType = data.beamType;
+                const b = n('width'), h = n('depth'), fc = n('fc'), fy = n('fy');
                 
-                // Flexure
-                let as_req = (mu*1e6) / (phi * fy * 0.9 * d); // Approx
-                const a = (as_req * fy) / (0.85 * fc * b);
-                as_req = (mu*1e6) / (phi * fy * (d - a/2));
-                const as_min = Math.max(0.25*Math.sqrt(fc)/fy, 1.4/fy) * b * d;
-                const as_bot = Math.max(as_req, as_min);
-                const as_top = Math.max(as_min, as_bot * 0.2);
-
-                // Shear
-                const phi_v = 0.75, vc = 0.17 * Math.sqrt(fc) * b * d / 1000;
-                const phi_vc = phi_v * vc;
-                let stirrups = `ϕ10@${Math.floor(Math.min(d/2, 600)/25)*25}mm`;
-                let shearMsg = "Min Stirrups";
-                if (vu > phi_vc) {
-                    const vs = (vu - phi_vc) / phi_v;
-                    let s = (157 * fy * d) / (vs * 1000);
-                    s = Math.floor(Math.min(s, d/2, 600) / 25) * 25;
-                    stirrups = `ϕ10@${s}mm`;
-                    shearMsg = "Shear Reinf. Req.";
+                // Check if beam is ordinary or deep beam
+                let L = 0;
+                let spans = [];
+                
+                if (beamType === 'simple') {
+                    L = n('span');
+                    spans = [L];
+                } else {
+                    const numSpans = n('numSpans');
+                    for (let i = 1; i <= numSpans; i++) {
+                        spans.push(n(`span${i}`));
+                    }
+                    L = Math.max(...spans);
                 }
-
+                
+                const Ld_ratio = L / (h/1000);
+                const beamClassification = Ld_ratio > 4 ? t('ordinaryBeam') : t('deepBeam');
+                
+                // Self weight
+                const selfWeight = (b * h / 1e6) * 25; // kN/m
+                const wallWeight = n('wallThickness') * n('wallHeight') * 19; // kN/m
+                const slabWeight = n('slabLoad') * n('slabWidth'); // kN/m
+                
+                // Total dead load
+                const dl = selfWeight + wallWeight + slabWeight;
+                const ll = 0; // Assuming no additional live load on beam
+                
+                // Factored load (ACI 318-19)
+                const wu = 1.2 * dl + 1.6 * ll;
+                
+                // Design forces - different for simple vs continuous beams
+                let mu = 0, vu = 0;
+                let momentDistribution = [];
+                
+                if (beamType === 'simple') {
+                    mu = wu * L * L / 8; // kN.m
+                    vu = wu * L / 2; // kN
+                    momentDistribution.push({location: 'Midspan', moment: mu, type: 'positive'});
+                } else {
+                    // Continuous beam moment calculations using ACI coefficients
+                    const numSpans = spans.length;
+                    
+                    // Calculate moments using ACI 318-19 approximate method coefficients
+                    for (let i = 0; i < numSpans; i++) {
+                        const span = spans[i];
+                        
+                        // Positive moment in span
+                        let posMomentCoeff = 1/14; // Default for interior spans
+                        if (i === 0 || i === numSpans - 1) {
+                            posMomentCoeff = 1/11; // End spans
+                        }
+                        
+                        const posMoment = posMomentCoeff * wu * span * span;
+                        momentDistribution.push({location: `Span ${i+1} Midspan`, moment: posMoment, type: 'positive'});
+                        
+                        // Negative moment at supports
+                        if (i < numSpans - 1) {
+                            const negMomentCoeff = 1/10; // Interior supports
+                            const negMoment = negMomentCoeff * wu * Math.max(span, spans[i+1]) * Math.max(span, spans[i+1]);
+                            momentDistribution.push({location: `Support ${i+1}-${i+2}`, moment: negMoment, type: 'negative'});
+                        }
+                    }
+                    
+                    // Use maximum moment for design
+                    mu = Math.max(...momentDistribution.map(m => Math.abs(m.moment)));
+                    vu = wu * Math.max(...spans) / 2; // Approximate shear
+                }
+                
+                // Flexural design
+                const d = h - 65; // Effective depth
+                const phi_f = 0.9; // Strength reduction factor for flexure
+                
+                // Calculate required reinforcement
+                const Rn = (mu * 1e6) / (phi_f * b * d * d);
+                const m = fy / (0.85 * fc);
+                const rho_req = (1 / m) * (1 - Math.sqrt(1 - (2 * m * Rn) / fy));
+                
+                // Minimum reinforcement (ACI 318-19 9.6.1.2)
+                const rho_min = Math.max(0.25 * Math.sqrt(fc) / fy, 1.4 / fy);
+                
+                // Maximum reinforcement (ACI 318-19 21.2.2)
+                const rho_max = 0.85 * fc / fy * 0.003 / (0.003 + 0.005);
+                
+                const rho = Math.max(rho_req, rho_min);
+                const as_req = rho * b * d;
+                
+                // Select bars - enhanced bar selection with more options
+                const bar_options = [10, 12, 14, 16, 18, 20, 25, 32];
+                let selected_bar = 16;
+                let num_bars = Math.ceil(as_req / (Math.PI * selected_bar * selected_bar / 4));
+                
+                // Adjust bar size if needed
+                for (const bar of bar_options) {
+                    const area = Math.PI * bar * bar / 4;
+                    const n_bars = Math.ceil(as_req / area);
+                    if (n_bars * area <= rho_max * b * d) {
+                        selected_bar = bar;
+                        num_bars = n_bars;
+                        break;
+                    }
+                }
+                
+                const as_provided = num_bars * (Math.PI * selected_bar * selected_bar / 4);
+                
+                // Top reinforcement (minimum) - enhanced for continuous beams
+                let as_top_min = Math.max(0.003 * b * d, as_req * 0.2);
+                if (beamType === 'continuous') {
+                    as_top_min = Math.max(as_top_min, as_req * 0.3); // Higher requirement for continuous beams
+                }
+                
+                const top_bar_options = [12, 14, 16];
+                let selected_top_bar = 12;
+                let num_top_bars = Math.max(2, Math.ceil(as_top_min / (Math.PI * selected_top_bar * selected_top_bar / 4)));
+                
+                for (const bar of top_bar_options) {
+                    const area = Math.PI * bar * bar / 4;
+                    const n_bars = Math.ceil(as_top_min / area);
+                    if (n_bars <= 6) { // Practical limit for top bars
+                        selected_top_bar = bar;
+                        num_top_bars = n_bars;
+                        break;
+                    }
+                }
+                
+                // Shear design (ACI 318-19 22.5)
+                const phi_v = 0.75; // Strength reduction factor for shear
+                const vc = 0.17 * Math.sqrt(fc) * b * d / 1000; // kN
+                const phi_vc = phi_v * vc;
+                
+                let stirrups = "";
+                let shearMsg = t('safe');
+                
+                if (vu > phi_vc) {
+                    const vs_req = (vu - phi_vc) / phi_v;
+                    
+                    // Check maximum shear reinforcement (ACI 318-19 22.5.1.2)
+                    const vs_max = 0.66 * Math.sqrt(fc) * b * d / 1000;
+                    
+                    if (vs_req > vs_max) {
+                        shearMsg = t('unsafe');
+                        stirrups = "Increase Section";
+                    } else {
+                        // Design stirrups
+                        const stirrup_bar_options = [8, 10, 12];
+                        let stirrup_bar = 10;
+                        let av = 2 * (Math.PI * stirrup_bar * stirrup_bar / 4); // mm² for 2 legs
+                        let s_req = (phi_v * av * fy * d) / (vs_req * 1000); // mm
+                        
+                        // Try different stirrup sizes if spacing is too small
+                        for (const bar of stirrup_bar_options.sort((a, b) => b - a)) {
+                            av = 2 * (Math.PI * bar * bar / 4);
+                            s_req = (phi_v * av * fy * d) / (vs_req * 1000);
+                            
+                            if (s_req >= 75) { // Minimum practical spacing
+                                stirrup_bar = bar;
+                                break;
+                            }
+                        }
+                        
+                        // Maximum spacing (ACI 318-19 9.7.6.2.2)
+                        const s_max = Math.min(d / 2, 600);
+                        
+                        let s = Math.min(s_req, s_max);
+                        s = Math.floor(s / 25) * 25; // Round to nearest 25mm
+                        
+                        stirrups = `ϕ${stirrup_bar}@${s}mm`;
+                        shearMsg = "Shear Reinf. Req.";
+                    }
+                } else {
+                    // Minimum shear reinforcement (ACI 318-19 9.6.3.3)
+                    const av_min = 0.062 * Math.sqrt(fc) * b / fy;
+                    const av_min_abs = 0.35 * b / fy;
+                    const av_req = Math.max(av_min, av_min_abs);
+                    
+                    const stirrup_bar = 10;
+                    const av_provided = 2 * (Math.PI * stirrup_bar * stirrup_bar / 4);
+                    
+                    if (av_provided >= av_req) {
+                        const s_max = Math.min(d / 2, 600);
+                        stirrups = `ϕ${stirrup_bar}@${Math.floor(s_max / 25) * 25}mm`;
+                    } else {
+                        // Calculate required spacing for minimum reinforcement
+                        const s_min = Math.floor((av_provided * fy) / (0.35 * b));
+                        stirrups = `ϕ${stirrup_bar}@${Math.min(s_min, 600)}mm`;
+                    }
+                }
+                
                 res = {
                     type: 'beam_design',
+                    beamType: beamType,
+                    spans: spans,
                     w: b, h: h, wu, mu, vu,
-                    as_bot, as_top,
-                    n_bot: Math.ceil(as_bot/201), bar_bot: 16,
-                    n_top: Math.max(2, Math.ceil(as_top/113)), bar_top: 12,
+                    as_bot: as_provided,
+                    as_top: num_top_bars * (Math.PI * selected_top_bar * selected_top_bar / 4),
+                    n_bot: num_bars, bar_bot: selected_bar,
+                    n_top: num_top_bars, bar_top: selected_top_bar,
                     stirrups, shearMsg,
+                    rho: rho * 100,
+                    rho_min: rho_min * 100,
+                    rho_max: rho_max * 100,
+                    beamClassification: beamClassification,
+                    Ld_ratio: Ld_ratio.toFixed(2),
+                    momentDistribution: momentDistribution,
                     proof: [
-                        {t:'1. Load (Wu)', f:'1.2D + 1.6L', c:`Beam+Wall+Slab`, r:`${wu.toFixed(2)} kN/m`},
-                        {t:'2. Moment (Mu)', f:'Wu*L^2/8', c:`${wu.toFixed(1)}*${L}^2/8`, r:`${mu.toFixed(2)} kN.m`},
-                        {t:'3. Bottom Steel', f:'As = Mu/φfy(d-a/2)', c:`Iterative Design`, r:`${as_bot.toFixed(0)} mm²`},
-                        {t:'4. Shear', f:'Vs = (Vu-φVc)/φ', c:`Vu=${vu.toFixed(1)}, φVc=${phi_vc.toFixed(1)}`, r: stirrups}
+                        {t:'1. Beam Classification', f:'L/d ratio', c:`${L}/${(h/1000).toFixed(2)} = ${Ld_ratio.toFixed(2)}`, r:beamClassification},
+                        {t:'2. Factored Load (Wu)', f:'1.2D + 1.6L', c:`Beam+Wall+Slab`, r:`${wu.toFixed(2)} kN/m`},
+                        {t:'3. Design Moment (Mu)', f:beamType === 'simple' ? 'Wu×L²/8' : 'ACI Coefficients', c:beamType === 'simple' ? `${wu.toFixed(1)}×${L}²/8` : 'See moment distribution', r:`${mu.toFixed(2)} kN.m`},
+                        {t:'4. Required Reinforcement', f:'ρ = (1/m)×[1-√(1-2mRn/fy)]', c:`Rn=${Rn.toFixed(4)}, m=${m.toFixed(2)}`, r:`${(rho*100).toFixed(2)}%`},
+                        {t:'5. Shear Design', f:'Vu = Wu×L/2, Vc = 0.17√fc×b×d', c:`Vu=${vu.toFixed(1)}, φVc=${phi_vc.toFixed(1)}`, r: stirrups}
                     ]
                 };
             } else if (state.mode === 'col_design') {
+                // Enhanced column design according to ACI 318-19
+                const columnType = data.columnType;
                 const b = n('b'), h = n('h'), pu = n('pu')*1000, fc = n('fc'), fy = n('fy'), rho_t = n('targetRho')/100;
-                const ag = b*h;
-                let ast = 0, status = t('safe');
-                const phi = 0.65, alpha = 0.80;
-
-                if (rho_t > 0) {
-                    ast = rho_t * ag;
-                    const pn = alpha * (0.85*fc*(ag-ast) + fy*ast);
-                    if (pu > phi * pn) status = t('unsafe');
-                } else {
-                    // Design
-                    const term1 = 0.85*fc*ag, term2 = fy - 0.85*fc;
-                    const req = ( (pu/(phi*alpha)) - term1 ) / term2;
-                    ast = Math.max(req, 0.01*ag);
-                    if (ast > 0.08*ag) status = t('unsafe');
+                const columnHeight = n('columnHeight'), k = n('kFactor');
+                const ag = b * h;
+                
+                // Strength reduction factor (ACI 318-19 Table 21.2.2)
+                const phi = 0.65; // For tied columns
+                
+                // Check if column is short or long (ACI 318-19 6.2.5)
+                const r = 0.3 * Math.min(b, h); // Radius of gyration
+                const klu_r = (k * columnHeight * 1000) / r;
+                const isShortColumn = klu_r <= 22; // For braced frames
+                
+                let ast = 0, status = t('safe'), designType = isShortColumn ? t('shortColumn') : t('longColumn');
+                
+                // Slenderness effects for long columns (ACI 318-19 6.6.4.5)
+                let magnificationFactor = 1.0;
+                if (!isShortColumn) {
+                    // Simplified moment magnification method
+                    const beta_dns = 0.6; // Conservative assumption
+                    const EI = (0.4 * 4700 * Math.sqrt(fc) * (b * h * h * h / 12)) / (1 + beta_dns);
+                    const Pc = (Math.PI * Math.PI * EI) / Math.pow(k * columnHeight * 1000, 2);
+                    magnificationFactor = 1.0 / (1 - (pu / (0.75 * Pc)));
+                    
+                    if (magnificationFactor > 2.0) {
+                        magnificationFactor = 2.0; // Limit per ACI
+                    }
                 }
-
-                const n_bars = Math.max(4, Math.ceil(ast/201) + (Math.ceil(ast/201)%2)); // Even num of 16mm
-                const tie = 10, s_tie = Math.min(16*16, 48*10, b, h);
+                
+                const designPu = pu * magnificationFactor;
+                
+                if (rho_t > 0) {
+                    // Check given reinforcement
+                    ast = rho_t * ag;
+                    let pn = 0;
+                    
+                    if (isShortColumn) {
+                        pn = 0.80 * (0.85 * fc * (ag - ast) + fy * ast); // ACI 318-19 22.4.2
+                    } else {
+                        // For long columns, use interaction diagram (simplified)
+                        pn = 0.70 * (0.85 * fc * (ag - ast) + fy * ast); // Reduced capacity
+                    }
+                    
+                    if (designPu > phi * pn) {
+                        status = t('unsafe');
+                    }
+                } else {
+                    // Design reinforcement
+                    let pn_req = designPu / phi;
+                    
+                    if (isShortColumn) {
+                        ast = (pn_req - 0.80 * 0.85 * fc * ag) / (0.80 * (fy - 0.85 * fc));
+                    } else {
+                        ast = (pn_req - 0.70 * 0.85 * fc * ag) / (0.70 * (fy - 0.85 * fc));
+                    }
+                    
+                    // Minimum reinforcement (ACI 318-19 10.6.1.1)
+                    const ast_min = 0.01 * ag;
+                    
+                    // Maximum reinforcement (ACI 318-19 10.6.1.1)
+                    const ast_max = 0.08 * ag;
+                    
+                    ast = Math.max(ast, ast_min);
+                    
+                    if (ast > ast_max) {
+                        status = t('unsafe');
+                        ast = ast_max;
+                    }
+                }
+                
+                // Select bars - enhanced with more bar options
+                const bar_options = [12, 14, 16, 18, 20, 25, 32];
+                let selected_bar = 16;
+                let num_bars = Math.ceil(ast / (Math.PI * selected_bar * selected_bar / 4));
+                
+                // Ensure even number of bars and at least 4 bars
+                num_bars = Math.max(4, num_bars + (num_bars % 2));
+                
+                // Adjust bar size if needed
+                for (const bar of bar_options) {
+                    const area = Math.PI * bar * bar / 4;
+                    const n_bars = Math.ceil(ast / area);
+                    const even_bars = n_bars + (n_bars % 2);
+                    if (even_bars * area <= 0.08 * ag) {
+                        selected_bar = bar;
+                        num_bars = even_bars;
+                        break;
+                    }
+                }
+                
+                // Tie design (ACI 318-19 25.7.2)
+                const tie_bar_options = [8, 10, 12];
+                let tie_bar = 10;
+                let s_tie = Math.min(16 * selected_bar, 48 * tie_bar, Math.min(b, h));
+                
+                // Adjust tie bar size if spacing is too large
+                for (const bar of tie_bar_options) {
+                    const new_s_tie = Math.min(16 * selected_bar, 48 * bar, Math.min(b, h));
+                    if (new_s_tie <= 300) { // Reasonable maximum spacing
+                        tie_bar = bar;
+                        s_tie = new_s_tie;
+                        break;
+                    }
+                }
                 
                 res = {
                     type: 'col_design',
+                    columnType: designType,
                     w: b, h: h, pu: pu/1000,
-                    n_bars, bar: 16, tie, s_tie,
-                    rho: ast/ag, status,
+                    n_bars: num_bars, bar: selected_bar, 
+                    tie: tie_bar, s_tie,
+                    rho: (num_bars * (Math.PI * selected_bar * selected_bar / 4)) / ag * 100,
+                    status,
+                    magnificationFactor: magnificationFactor.toFixed(2),
+                    isShortColumn: isShortColumn,
+                    klu_r: klu_r.toFixed(1),
                     proof: [
-                         {t:'1. Input', f:'', c:`b=${b}, h=${h}, Pu=${pu/1000}kN`, r:`Ag=${ag}mm²`},
-                         {t:'2. Vertical Steel', f:'Pu = φ*0.8*[0.85fc(Ag-Ast)+fyAst]', c:`Solve for Ast`, r:`${ast.toFixed(0)} mm²`},
-                         {t:'3. Ties', f:'min(16db, 48dt, dim)', c:`min(${16*16}, ${48*10}, ${b})`, r:`${s_tie} mm`}
+                         {t:'1. Input Parameters', f:'', c:`b=${b}mm, h=${h}mm, Pu=${pu/1000}kN, H=${columnHeight}m`, r:`Ag=${ag}mm²`},
+                         {t:'2. Slenderness Check', f:'klu/r', c:`${k}×${columnHeight}×1000/${r.toFixed(0)}`, r:`${klu_r.toFixed(1)} ${isShortColumn ? '≤ 22 (Short)' : '> 22 (Long)'}`},
+                         {t:'3. Magnification Factor', f:'δ = 1/(1-Pu/(0.75Pc))', c:isShortColumn ? 'N/A (Short Column)' : `1/(1-${pu/1000}/(0.75×Pc))`, r:isShortColumn ? '1.0' : magnificationFactor.toFixed(2)},
+                         {t:'4. Required Reinforcement', f:'Pn = Pu/φ, Ast = (Pn-0.8×0.85fcAg)/(0.8(fy-0.85fc))', c:`φ=0.65, Pn=${(designPu/phi/1000).toFixed(1)}kN`, r:`Ast=${ast.toFixed(0)} mm²`},
+                         {t:'5. Tie Spacing', f:'min(16db, 48dt, least dimension)', c:`min(${16*selected_bar}, ${48*tie_bar}, ${Math.min(b, h)})`, r:`${s_tie} mm`}
                     ]
                 };
             } else if (state.mode === 'slab_design') {
-                const h = n('h'), wu = n('load'), l = n('shortSpan');
-                const d = h - 25, phi = 0.9, fy = n('fy');
-                let mu_s = 0, as_s = 0, sp_s = 0, mu_l = 0, as_l = 0, sp_l = 0;
-                const as_min = 0.0018 * 1000 * h;
-
+                // Enhanced slab design according to ACI 318-19
+                const h = n('h'), DL = n('deadLoad'), LL = n('liveLoad'), fc = n('fc'), fy = n('fy');
+                const wu = 1.2 * DL + 1.6 * LL; // Factored load
+                
                 if (data.slabType === 'one_way') {
-                    mu_s = wu * l * l / 8;
-                    let as = (mu_s*1e6) / (phi * fy * 0.9 * d);
-                    as_s = Math.max(as, as_min);
-                    sp_s = Math.floor(Math.min(1000*113/as_s, 3*h, 450)/10)*10;
+                    const L = n('shortSpan');
+                    const d = h - 25; // Effective depth
+                    const phi = 0.9; // Strength reduction factor
+                    
+                    // Minimum reinforcement (ACI 318-19 7.6.1.1)
+                    const as_min = 0.0018 * 1000 * h;
+                    
+                    // Design moment
+                    const mu = wu * L * L / 8;
+                    
+                    // Calculate required reinforcement
+                    const Rn = (mu * 1e6) / (phi * 1000 * d * d);
+                    const m = fy / (0.85 * fc);
+                    const rho_req = (1 / m) * (1 - Math.sqrt(1 - (2 * m * Rn) / fy));
+                    
+                    const as_req = Math.max(rho_req * 1000 * d, as_min);
+                    
+                    // Select bar size and spacing - enhanced with more options
+                    const bar_options = [8, 10, 12, 14, 16];
+                    let selected_bar = 12;
+                    let spacing = Math.floor(1000 * (Math.PI * selected_bar * selected_bar / 4) / as_req);
+                    
+                    // Maximum spacing (ACI 318-19 7.7.2.3)
+                    const s_max = Math.min(3 * h, 450);
+                    
+                    if (spacing > s_max) {
+                        spacing = s_max;
+                        // Check if we need larger bars
+                        for (const bar of bar_options.sort((a, b) => b - a)) {
+                            const area = Math.PI * bar * bar / 4;
+                            const s = Math.floor(1000 * area / as_req);
+                            if (s <= s_max) {
+                                selected_bar = bar;
+                                spacing = s;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Round spacing to nearest 25mm
+                    spacing = Math.floor(spacing / 25) * 25;
+                    
                     res = {
-                        type: 'slab_design', subtype: 'one',
-                        h, mu: mu_s, as: as_s, sp: sp_s, bar: 12,
-                        proof: [{t:'1. Moment', f:'Wu*L^2/8', c:'', r:`${mu_s.toFixed(2)}`}, {t:'2. Steel', f:'As min check', c:'', r:`${as_s.toFixed(0)}`}]
+                        type: 'slab_design', 
+                        subtype: 'one_way',
+                        h, mu, as: as_req, spacing: spacing, bar: selected_bar,
+                        design: `ϕ${selected_bar}@${spacing}mm`,
+                        proof: [
+                            {t:'1. Factored Load', f:'Wu = 1.2DL + 1.6LL', c:`1.2×${DL} + 1.6×${LL}`, r:`${wu.toFixed(2)} kN/m²`},
+                            {t:'2. Design Moment', f:'Mu = Wu×L²/8', c:`${wu.toFixed(2)}×${L}²/8`, r:`${mu.toFixed(2)} kN.m/m`},
+                            {t:'3. Required Steel', f:'As = max(ρbd, As_min)', c:`ρ=${(rho_req*100).toFixed(3)}%, As_min=${as_min.toFixed(0)}mm²/m`, r:`${as_req.toFixed(0)} mm²/m`},
+                            {t:'4. Final Design', f:'ACI 318-19 7.7.2.3', c:'Maximum spacing: min(3h, 450mm)', r:`ϕ${selected_bar}@${spacing}mm`}
+                        ]
                     };
-                } else {
-                     // Two way simplified
-                     const m = l / n('longSpan');
-                     const c = 0.045; // Avg coeff
-                     mu_s = c * wu * l * l; 
-                     let as1 = (mu_s*1e6) / (phi * fy * 0.9 * d);
-                     as_s = Math.max(as1, as_min);
-                     sp_s = Math.floor(Math.min(1000*113/as_s, 3*h, 450)/10)*10;
-
-                     mu_l = c * wu * n('longSpan') * n('longSpan'); // very rough approx for visual
-                     // Better approx for long dir moment is usually smaller, let's keep simple logic for "Method 2"
-                     // Actually Mu_long = C_long * Wu * Ly^2 is not standard Method 2. Method 2 uses tables based on m.
-                     // For simplicity/demo: Use same C for long span logic but scaled.
-                     let as2 = (mu_s * 0.85 * 1e6) / (phi * fy * 0.9 * (d-10));
-                     as_l = Math.max(as2, as_min);
-                     sp_l = Math.floor(Math.min(1000*113/as_l, 3*h, 450)/10)*10;
-
-                     res = {
-                        type: 'slab_design', subtype: 'two',
-                        h, mu_s, as_s, sp_s, mu_l: mu_s*0.85, as_l, sp_l, bar: 12,
-                        proof: [{t:'1. Short Dir', f:'Coeff Method', c:'', r:`ϕ12@${sp_s}`}, {t:'2. Long Dir', f:'', c:'', r:`ϕ12@${sp_l}`}]
-                     };
+                } 
+                else if (data.slabType === 'two_way') {
+                    const Lx = n('shortSpan'), Ly = n('longSpan');
+                    const d = h - 25, phi = 0.9;
+                    const as_min = 0.0018 * 1000 * h;
+                    
+                    // ACI 318-19 Direct Design Method coefficients
+                    const m = Lx / Ly;
+                    let coeff_neg, coeff_pos;
+                    
+                    if (data.panelType === 'simplePanel') {
+                        // Simply supported
+                        coeff_neg = 0;
+                        coeff_pos = 0.062;
+                    } else {
+                        // Continuous
+                        if (m <= 0.5) {
+                            coeff_neg = 0.075;
+                            coeff_pos = 0.045;
+                        } else {
+                            coeff_neg = 0.045;
+                            coeff_pos = 0.028;
+                        }
+                    }
+                    
+                    const mu_short = coeff_neg * wu * Lx * Lx;
+                    const mu_long = coeff_pos * wu * Ly * Ly;
+                    
+                    // Calculate reinforcement for both directions
+                    const Rn_short = (mu_short * 1e6) / (phi * 1000 * d * d);
+                    const m_val = fy / (0.85 * fc);
+                    const rho_short = (1 / m_val) * (1 - Math.sqrt(1 - (2 * m_val * Rn_short) / fy));
+                    const as_short = Math.max(rho_short * 1000 * d, as_min);
+                    
+                    const Rn_long = (mu_long * 1e6) / (phi * 1000 * (d-10) * (d-10));
+                    const rho_long = (1 / m_val) * (1 - Math.sqrt(1 - (2 * m_val * Rn_long) / fy));
+                    const as_long = Math.max(rho_long * 1000 * (d-10), as_min);
+                    
+                    // Select bar size and spacing - enhanced with more options
+                    const bar_options = [8, 10, 12, 14];
+                    const bar_short = 12;
+                    const bar_long = 10;
+                    
+                    let sp_short = Math.min(Math.floor(1000 * (Math.PI * bar_short * bar_short / 4) / as_short), Math.min(3*h, 450));
+                    let sp_long = Math.min(Math.floor(1000 * (Math.PI * bar_long * bar_long / 4) / as_long), Math.min(3*h, 450));
+                    
+                    // Round to nearest 25mm
+                    const sp_short_rounded = Math.floor(sp_short / 25) * 25;
+                    const sp_long_rounded = Math.floor(sp_long / 25) * 25;
+                    
+                    res = {
+                        type: 'slab_design',
+                        subtype: 'two_way',
+                        h, Lx, Ly, m,
+                        moments: { short: mu_short, long: mu_long },
+                        steel: { short: as_short, long: as_long },
+                        spacing: { short: sp_short_rounded, long: sp_long_rounded },
+                        bar: { short: bar_short, long: bar_long },
+                        design: `ϕ${bar_short}@${sp_short_rounded}mm (قصير), ϕ${bar_long}@${sp_long_rounded}mm (طويل)`,
+                        proof: [
+                            {t:'1. Aspect Ratio', f:'m = Lx/Ly', c:`${Lx}/${Ly}`, r:`${m.toFixed(2)}`},
+                            {t:'2. Short Dir Moment', f:'Coeff × Wu × Lx²', c:`${coeff_neg}×${wu.toFixed(2)}×${Lx}²`, r:`${mu_short.toFixed(2)} kN.m/m`},
+                            {t:'3. Long Dir Moment', f:'Coeff × Wu × Ly²', c:`${coeff_pos}×${wu.toFixed(2)}×${Ly}²`, r:`${mu_long.toFixed(2)} kN.m/m`},
+                            {t:'4. Reinforcement', f:'Direct Design Method ACI 318-19', c:'Ch. 8', r:'See design table'}
+                        ]
+                    };
                 }
+                else if (data.slabType.includes('flat_slab')) {
+                    // Flat slab design according to ACI 318-19 Chapter 8
+                    const Lx = n('shortSpan'), Ly = n('longSpan');
+                    const columnSize = n('columnSize') / 1000; // Convert to meters
+                    
+                    let dropWidth = 0, dropDepth = 0, beamWidth = 0, beamDepth = 0, beamSpacing = 0;
+                    
+                    if (data.slabType.includes('drop') || data.slabType === 'flat_slab_complete') {
+                        dropWidth = n('dropPanelWidth');
+                        dropDepth = n('dropPanelDepth');
+                    }
+                    
+                    if (data.slabType.includes('beams') || data.slabType === 'flat_slab_complete') {
+                        beamWidth = n('beamWidth') / 1000;
+                        beamDepth = n('beamDepth') / 1000;
+                        beamSpacing = n('beamSpacing');
+                    }
+
+                    // Effective depths
+                    const d_slab = h - 25;
+                    const d_drop = (h + dropDepth) - 25;
+                    const d_beam = beamDepth - 65;
+
+                    // Clear span
+                    const Ln = Math.min(Lx, Ly) - columnSize;
+
+                    // Total moment (ACI 318-19 8.10.3.2)
+                    const Mo = wu * Lx * Ly * Ln * Ln / 8;
+
+                    // Moment distribution (ACI 318-19 8.10.4)
+                    let M_neg, M_pos;
+                    
+                    if (data.slabType === 'flat_slab_basic') {
+                        M_neg = 0.65 * Mo;
+                        M_pos = 0.35 * Mo;
+                    } else if (data.slabType === 'flat_slab_with_drop') {
+                        M_neg = 0.70 * Mo;
+                        M_pos = 0.30 * Mo;
+                    } else if (data.slabType === 'flat_slab_with_beams') {
+                        M_neg = 0.70 * Mo;
+                        M_pos = 0.30 * Mo;
+                    } else if (data.slabType === 'flat_slab_complete') {
+                        M_neg = 0.75 * Mo;
+                        M_pos = 0.25 * Mo;
+                    }
+
+                    // Distribute to strips (ACI 318-19 8.10.5)
+                    const M_col_neg = 0.75 * M_neg;
+                    const M_mid_neg = 0.25 * M_neg;
+                    const M_col_pos = 0.60 * M_pos;
+                    const M_mid_pos = 0.40 * M_pos;
+
+                    // Calculate reinforcement
+                    const phi = 0.9;
+                    const as_min = 0.0018 * 1000 * h;
+
+                    let as_col_neg, as_mid_neg, as_col_pos, as_mid_pos;
+                    let sp_col_neg, sp_mid_neg, sp_col_pos, sp_mid_pos;
+
+                    if (data.slabType.includes('drop') || data.slabType === 'flat_slab_complete') {
+                        as_col_neg = Math.max((M_col_neg * 1e6) / (phi * fy * 0.9 * d_drop), as_min);
+                        as_mid_neg = Math.max((M_mid_neg * 1e6) / (phi * fy * 0.9 * d_slab), as_min);
+                    } else {
+                        as_col_neg = Math.max((M_col_neg * 1e6) / (phi * fy * 0.9 * d_slab), as_min);
+                        as_mid_neg = Math.max((M_mid_neg * 1e6) / (phi * fy * 0.9 * d_slab), as_min);
+                    }
+
+                    as_col_pos = Math.max((M_col_pos * 1e6) / (phi * fy * 0.9 * d_slab), as_min);
+                    as_mid_pos = Math.max((M_mid_pos * 1e6) / (phi * fy * 0.9 * d_slab), as_min);
+
+                    // Calculate spacing with enhanced bar options
+                    const bar_options = [10, 12, 14, 16];
+                    let bar_col_neg = 16, bar_mid_neg = 12, bar_col_pos = 12, bar_mid_pos = 10;
+                    
+                    sp_col_neg = Math.min(Math.floor(1000 * (Math.PI * bar_col_neg * bar_col_neg / 4) / as_col_neg), 300);
+                    sp_mid_neg = Math.min(Math.floor(1000 * (Math.PI * bar_mid_neg * bar_mid_neg / 4) / as_mid_neg), 300);
+                    sp_col_pos = Math.min(Math.floor(1000 * (Math.PI * bar_col_pos * bar_col_pos / 4) / as_col_pos), 300);
+                    sp_mid_pos = Math.min(Math.floor(1000 * (Math.PI * bar_mid_pos * bar_mid_pos / 4) / as_mid_pos), 300);
+
+                    // Beam design if applicable
+                    let beamDesign = '';
+                    let beamReinforcement = {};
+                    if (data.slabType.includes('beams') || data.slabType === 'flat_slab_complete') {
+                        const beam_mu = 0.08 * wu * Lx * Ly * Ln;
+                        const beam_as = Math.max((beam_mu * 1e6) / (phi * fy * 0.9 * d_beam), 0.003 * beamWidth * 1000 * d_beam);
+                        
+                        // Enhanced beam bar selection
+                        const beam_bar_options = [16, 18, 20, 25];
+                        let beam_bar = 20;
+                        let beam_num_bars = Math.ceil(beam_as / (Math.PI * beam_bar * beam_bar / 4));
+                        
+                        for (const bar of beam_bar_options) {
+                            const area = Math.PI * bar * bar / 4;
+                            const n_bars = Math.ceil(beam_as / area);
+                            if (n_bars <= 6) { // Practical limit
+                                beam_bar = bar;
+                                beam_num_bars = n_bars;
+                                break;
+                            }
+                        }
+                        
+                        beamDesign = `، الكمرات: ${beam_num_bars}ϕ${beam_bar}`;
+                        beamReinforcement = {
+                            bars: beam_num_bars,
+                            barSize: beam_bar,
+                            area: beam_num_bars * (Math.PI * beam_bar * beam_bar / 4)
+                        };
+                    }
+
+                    res = {
+                        type: 'slab_design',
+                        subtype: data.slabType,
+                        totalMoment: Mo,
+                        moments: { negative: M_neg, positive: M_pos },
+                        reinforcement: {
+                            colIntNeg: { as: as_col_neg, sp: sp_col_neg, bar: bar_col_neg },
+                            midIntNeg: { as: as_mid_neg, sp: sp_mid_neg, bar: bar_mid_neg },
+                            colPos: { as: as_col_pos, sp: sp_col_pos, bar: bar_col_pos },
+                            midPos: { as: as_mid_pos, sp: sp_mid_pos, bar: bar_mid_pos }
+                        },
+                        design: `ϕ${bar_col_neg}@${sp_col_neg}mm (Column -), ϕ${bar_mid_neg}@${sp_mid_neg}mm (Middle -), ϕ${bar_col_pos}@${sp_col_pos}mm (Column +), ϕ${bar_mid_pos}@${sp_mid_pos}mm (Middle +)${beamDesign}`,
+                        beamReinforcement: beamReinforcement,
+                        details: {
+                            dropPanels: data.slabType.includes('drop'),
+                            beams: data.slabType.includes('beams'),
+                            columnSize: columnSize * 1000,
+                            dropWidth: dropWidth,
+                            dropDepth: dropDepth,
+                            beamWidth: beamWidth * 1000,
+                            beamDepth: beamDepth * 1000,
+                            beamSpacing: beamSpacing
+                        },
+                        proof: [
+                            {t:'1. Factored Load', f:'Wu = 1.2DL + 1.6LL', c:`1.2×${DL} + 1.6×${LL}`, r:`${wu.toFixed(2)} kN/m²`},
+                            {t:'2. Total Moment', f:'Mo = Wu×Lx×Ly×Ln²/8', c:`${wu.toFixed(2)}×${Lx}×${Ly}×${Ln.toFixed(2)}²/8`, r:`${Mo.toFixed(2)} kN.m`},
+                            {t:'3. Negative Moment', f:'0.65-0.75×Mo', c:`${M_neg.toFixed(2)} kN.m`, r:''},
+                            {t:'4. Positive Moment', f:'0.25-0.35×Mo', c:`${M_pos.toFixed(2)} kN.m`, r:''},
+                            {t:'5. Design', f:'Direct Design Method ACI 318-19', c:'Ch. 8', r:'See reinforcement table'}
+                        ]
+                    };
+                }
+            } else if (state.mode === 'deep_beam') {
+                // Enhanced Deep Beam Design using Strut and Tie Method (ACI 318-19 Appendix A)
+                const b = n('width'), h = n('depth'), L = n('clearSpan');
+                const a = n('shearSpan'), d = n('effectiveDepth');
+                const fc = n('fc'), fy = n('fy');
+                const pointLoad = n('pointLoad'), uniformLoad = n('uniformLoad');
+                const numSupports = n('numSupports');
+                const supportWidth = n('supportWidth');
+                
+                // Calculate reactions and forces based on support configuration
+                let totalLoad, reaction, maxShear;
+                
+                if (numSupports === 1) {
+                    // Cantilever deep beam
+                    totalLoad = pointLoad + (uniformLoad * L);
+                    reaction = totalLoad;
+                    maxShear = totalLoad;
+                } else {
+                    // Simply supported deep beam (2 supports)
+                    totalLoad = pointLoad + (uniformLoad * L);
+                    reaction = totalLoad / 2;
+                    maxShear = reaction;
+                }
+                
+                // Check if beam is deep beam (ACI 318-19 9.9.1.1)
+                const Ld_ratio = L / (d/1000);
+                const isDeepBeam = Ld_ratio <= 4;
+                const beamType = isDeepBeam ? t('deepBeam') : t('ordinaryBeam');
+                
+                // Strut and Tie Model
+                const theta = Math.atan(d / a); // Strut angle
+                const strutForce = reaction / Math.sin(theta);
+                const tieForce = reaction / Math.tan(theta);
+                
+                // Strength reduction factors (ACI 318-19 A.3)
+                const phi_strut = 0.75; // For struts
+                const phi_tie = 0.75; // For ties
+                const phi_node = 0.75; // For nodes
+                
+                // Strut capacity (ACI 318-19 A.3.2)
+                const beta_s = 0.75; // Bottle-shaped strut without reinforcement
+                const fce_strut = 0.85 * beta_s * fc;
+                const strutWidth = b * Math.sin(theta); // Effective strut width
+                const strutArea = strutWidth * b;
+                const strutCapacity = phi_strut * fce_strut * strutArea / 1000; // kN
+                
+                // Tie capacity (ACI 318-19 A.4)
+                const ast_req = (tieForce * 1000) / (phi_tie * fy);
+                
+                // Select tie reinforcement - enhanced with more options
+                const tieBar_options = [12, 14, 16, 18, 20, 25, 32];
+                let selected_tieBar = 20;
+                let numTieBars = Math.ceil(ast_req / (Math.PI * selected_tieBar * selected_tieBar / 4));
+                
+                for (const bar of tieBar_options) {
+                    const area = Math.PI * bar * bar / 4;
+                    const n_bars = Math.ceil(ast_req / area);
+                    if (n_bars <= 8) { // Practical limit
+                        selected_tieBar = bar;
+                        numTieBars = n_bars;
+                        break;
+                    }
+                }
+                
+                const tieCapacity = phi_tie * numTieBars * (Math.PI * selected_tieBar * selected_tieBar / 4) * fy / 1000; // kN
+                
+                // Node capacity (ACI 318-19 A.5)
+                const beta_n = 0.80; // C-C-T node
+                const fce_node = 0.85 * beta_n * fc;
+                const nodeArea = b * supportWidth; // Bearing area
+                const nodeCapacity = phi_node * fce_node * nodeArea / 1000; // kN
+                
+                // Minimum reinforcement for deep beams (ACI 318-19 9.9.3)
+                const min_vert_reinf = 0.0025 * b * h;
+                const min_horz_reinf = 0.0025 * b * h;
+                
+                // Design vertical reinforcement - enhanced with spacing calculation
+                const vert_bar_options = [10, 12, 14];
+                let vert_bar = 12;
+                const vert_area = Math.PI * vert_bar * vert_bar / 4;
+                const num_vert_bars = Math.ceil(min_vert_reinf / vert_area);
+                let vert_spacing = Math.min(Math.floor(h / num_vert_bars), 300);
+                
+                // Adjust bar size if spacing is too small
+                for (const bar of vert_bar_options.sort((a, b) => b - a)) {
+                    const area = Math.PI * bar * bar / 4;
+                    const n_bars = Math.ceil(min_vert_reinf / area);
+                    const spacing = Math.floor(h / n_bars);
+                    if (spacing >= 100) { // Minimum practical spacing
+                        vert_bar = bar;
+                        vert_spacing = spacing;
+                        break;
+                    }
+                }
+                
+                const vert_spacing_rounded = Math.floor(vert_spacing / 25) * 25;
+                
+                // Design horizontal reinforcement
+                const horz_bar_options = [10, 12, 14];
+                let horz_bar = 12;
+                const horz_area = Math.PI * horz_bar * horz_bar / 4;
+                const num_horz_bars = Math.ceil(min_horz_reinf / horz_area);
+                let horz_spacing = Math.min(Math.floor(L * 1000 / num_horz_bars), 300);
+                
+                // Adjust bar size if spacing is too small
+                for (const bar of horz_bar_options.sort((a, b) => b - a)) {
+                    const area = Math.PI * bar * bar / 4;
+                    const n_bars = Math.ceil(min_horz_reinf / area);
+                    const spacing = Math.floor(L * 1000 / n_bars);
+                    if (spacing >= 100) { // Minimum practical spacing
+                        horz_bar = bar;
+                        horz_spacing = spacing;
+                        break;
+                    }
+                }
+                
+                const horz_spacing_rounded = Math.floor(horz_spacing / 25) * 25;
+                
+                // Check capacities
+                const strutOK = strutCapacity >= strutForce;
+                const tieOK = tieCapacity >= tieForce;
+                const nodeOK = nodeCapacity >= reaction;
+                
+                const status = (strutOK && tieOK && nodeOK) ? t('safe') : t('unsafe');
+                
+                res = {
+                    type: 'deep_beam',
+                    strutForce: strutForce,
+                    tieForce: tieForce,
+                    reaction: reaction,
+                    strutCapacity: strutCapacity,
+                    tieCapacity: tieCapacity,
+                    nodeCapacity: nodeCapacity,
+                    strutAngle: (theta * 180 / Math.PI).toFixed(1),
+                    strutWidth: strutWidth.toFixed(0),
+                    numTieBars: numTieBars,
+                    tieBar: selected_tieBar,
+                    vertReinf: `ϕ${vert_bar}@${vert_spacing_rounded}mm`,
+                    horzReinf: `ϕ${horz_bar}@${horz_spacing_rounded}mm`,
+                    min_vert_reinf: min_vert_reinf,
+                    min_horz_reinf: min_horz_reinf,
+                    beamType: beamType,
+                    Ld_ratio: Ld_ratio.toFixed(2),
+                    isDeepBeam: isDeepBeam,
+                    status: status,
+                    supportConfig: numSupports === 1 ? 'Cantilever' : 'Simply Supported',
+                    proof: [
+                        {t:'1. Beam Classification', f:'L/d ratio', c:`${L}/${(d/1000).toFixed(2)} = ${Ld_ratio.toFixed(2)}`, r:beamType},
+                        {t:'2. Support Configuration', f:'', c:`${numSupports} ${numSupports === 1 ? 'support' : 'supports'}`, r:numSupports === 1 ? 'Cantilever' : 'Simply Supported'},
+                        {t:'3. Strut Angle', f:'θ = atan(d/a)', c:`atan(${d}/${a*1000})`, r:`${(theta * 180 / Math.PI).toFixed(1)}°`},
+                        {t:'4. Strut Force', f:'Fs = R/sin(θ)', c:`${reaction.toFixed(1)}/sin(${(theta * 180 / Math.PI).toFixed(1)}°)`, r:`${strutForce.toFixed(1)} kN`},
+                        {t:'5. Tie Force', f:'Ft = R/tan(θ)', c:`${reaction.toFixed(1)}/tan(${(theta * 180 / Math.PI).toFixed(1)}°)`, r:`${tieForce.toFixed(1)} kN`},
+                        {t:'6. Strut Capacity', f:'φ×0.85×βs×fc×Ac', c:`0.75×0.85×0.75×${fc}×${strutArea.toFixed(0)}`, r:`${strutCapacity.toFixed(1)} kN`},
+                        {t:'7. Tie Capacity', f:'φ×Ast×fy', c:`0.75×${(numTieBars * (Math.PI * selected_tieBar * selected_tieBar / 4)).toFixed(0)}×${fy}`, r:`${tieCapacity.toFixed(1)} kN`},
+                        {t:'8. Node Capacity', f:'φ×0.85×βn×fc×An', c:`0.75×0.85×0.80×${fc}×${nodeArea}`, r:`${nodeCapacity.toFixed(1)} kN`},
+                        {t:'9. Min Vertical Reinf', f:'0.0025×b×h', c:`0.0025×${b}×${h}`, r:`${min_vert_reinf.toFixed(0)} mm²`},
+                        {t:'10. Min Horizontal Reinf', f:'0.0025×b×h', c:`0.0025×${b}×${h}`, r:`${min_horz_reinf.toFixed(0)} mm²`}
+                    ]
+                };
             }
 
-            saveHistory(data.elementName, getResultSummary(res), state.mode);
+            state.currentElementName = data.elementName;
+            saveHistory(data.elementName, getResultSummary(res), state.mode, res);
             renderResults(res);
         }
 
         function getResultSummary(res) {
             if(res.type==='wall') return `${res.gov.toFixed(2)} kN/m`;
-            if(res.type==='beam_design') return `${res.n_bot}ϕ${res.bar_bot}`;
-            if(res.type==='col_design') return `${res.n_bars}ϕ${res.bar}`;
+            if(res.type==='beam_design') return `${res.n_bot}ϕ${res.bar_bot} (${res.beamType})`;
+            if(res.type==='col_design') return `${res.n_bars}ϕ${res.bar} (${res.columnType})`;
+            if(res.type==='slab_design') {
+                if(res.subtype === 'one_way') return `ϕ${res.bar}@${res.spacing}mm`;
+                if(res.subtype === 'two_way') return `Two-Way Slab`;
+                if(res.subtype.includes('flat_slab')) return `Flat Slab`;
+            }
+            if(res.type==='deep_beam') return `${res.numTieBars}ϕ${res.tieBar}`;
             return "Done";
         }
 
@@ -718,27 +1908,37 @@
                 `;
             } else {
                 // Design Calculators
-                // SVG Generation
                 let svgHtml = '';
                 if (res.type === 'beam_design') {
-                    svgHtml = getBeamSVG(res.w, res.h, res.n_top, res.n_bot, res.bar_top, res.bar_bot);
+                    svgHtml = getBeamSVG(res.w, res.h, res.n_top, res.n_bot, res.bar_top, res.bar_bot, res.beamType);
                 } else if (res.type === 'col_design') {
                     svgHtml = getColSVG(res.w, res.h, res.n_bars, res.bar, res.tie, res.s_tie);
-                } else {
-                    svgHtml = getSlabSVG(res.h, res.bar, res.sp_s, res.subtype==='two');
+                } else if (res.type === 'slab_design') {
+                    if (res.subtype === 'one_way') {
+                        svgHtml = getOneWaySlabSVG(res.h, res.bar, res.spacing);
+                    } else if (res.subtype === 'two_way') {
+                        svgHtml = getTwoWaySlabSVG(res.h, res.bar, res.spacing);
+                    } else if (res.subtype.includes('flat_slab')) {
+                        svgHtml = getFlatSlabSVG(res.h, res.reinforcement, res.details);
+                    }
+                } else if (res.type === 'deep_beam') {
+                    svgHtml = getDeepBeamSVG(res.w, res.h, res.strutAngle, res.numTieBars, res.tieBar, res.supportConfig);
                 }
 
                 html = `
-                <div class="flex flex-col md:flex-row gap-6">
-                    <div class="w-full md:w-1/3 bg-[#282c34] p-4 rounded-xl border border-slate-700 shadow-md flex items-center justify-center min-h-[300px]">
+                <div class="flex flex-col lg:flex-row gap-6">
+                    <div class="w-full lg:w-2/5 bg-[#282c34] p-4 rounded-xl border border-slate-700 shadow-md flex items-center justify-center min-h-[300px]">
                         ${svgHtml}
                     </div>
-                    <div class="w-full md:w-2/3 space-y-4">
+                    <div class="w-full lg:w-3/5 space-y-4">
                          <div class="rounded-xl border border-slate-200 overflow-hidden shadow-sm bg-white">
                              <div class="bg-slate-50 p-3 border-b flex items-center gap-2"><i data-lucide="activity" class="w-4 h-4 text-blue-600"></i> <span class="font-bold text-sm">${t('designForces')}</span></div>
                              ${getDesignTable(res)}
                          </div>
-                         <button onclick='openProof(${JSON.stringify(res.proof)})' class="w-full border border-slate-300 text-slate-600 py-2 rounded-md hover:bg-slate-50 font-medium flex items-center justify-center gap-2"><i data-lucide="book-open" class="w-4 h-4"></i> ${t('showProof')}</button>
+                         <div class="flex gap-2">
+                             <button onclick='openProof(${JSON.stringify(res.proof)})' class="flex-1 border border-slate-300 text-slate-600 py-2 rounded-md hover:bg-slate-50 font-medium flex items-center justify-center gap-2"><i data-lucide="book-open" class="w-4 h-4"></i> ${t('showProof')}</button>
+                             <button onclick="exportToPDF()" class="flex-1 border border-slate-300 text-slate-600 py-2 rounded-md hover:bg-slate-50 font-medium flex items-center justify-center gap-2"><i data-lucide="download" class="w-4 h-4"></i> ${t('exportToPDF')}</button>
+                         </div>
                     </div>
                 </div>
                 `;
@@ -757,44 +1957,329 @@
 
             c.innerHTML = html;
             lucide.createIcons();
-            state.currentResult = res; // store for AI
+            state.currentResult = res;
         }
 
         function getDesignTable(res) {
             if (res.type === 'beam_design') {
-                return `<table class="w-full text-sm">
-                    <tr class="border-b"><td class="p-2 font-bold text-slate-600">${t('bottom')}</td><td class="p-2 text-center font-black text-blue-800 dir-ltr text-lg">${res.n_bot}ϕ${res.bar_bot}</td></tr>
-                    <tr class="border-b"><td class="p-2 font-bold text-slate-600">${t('top')}</td><td class="p-2 text-center font-black text-blue-800 dir-ltr text-lg">${res.n_top}ϕ${res.bar_top}</td></tr>
-                    <tr><td class="p-2 font-bold text-slate-600">${t('stirrups')}</td><td class="p-2 text-center font-black text-indigo-800 dir-ltr text-lg">${res.stirrups}</td></tr>
-                </table>`;
+                let momentRows = '';
+                if (res.momentDistribution && res.momentDistribution.length > 0) {
+                    momentRows = `
+                        <tr class="border-b border-slate-100">
+                            <td class="p-2 font-medium text-slate-700" colspan="3"><strong>Moment Distribution</strong></td>
+                        </tr>
+                        ${res.momentDistribution.map(m => `
+                            <tr class="border-b border-slate-100">
+                                <td class="p-2 text-slate-600">${m.location}</td>
+                                <td class="p-2 text-center font-mono ${m.type === 'positive' ? 'text-blue-600' : 'text-red-600'}">${m.moment.toFixed(2)} kN.m</td>
+                                <td class="p-2 text-center text-slate-500">${m.type}</td>
+                            </tr>
+                        `).join('')}
+                    `;
+                }
+                
+                return `
+                    <div class="p-4">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-slate-200">
+                                    <th class="text-right p-2 font-bold text-slate-600">${t('location')}</th>
+                                    <th class="text-center p-2 font-bold text-slate-600">${t('rebar')}</th>
+                                    <th class="text-center p-2 font-bold text-slate-600">${t('details')}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="border-b border-slate-100">
+                                    <td class="p-2 font-medium text-slate-700">${t('beamClassification')}</td>
+                                    <td class="p-2 text-center font-bold ${res.beamClassification === t('ordinaryBeam') ? 'text-blue-600' : 'text-violet-600'}" colspan="2">${res.beamClassification} (L/d = ${res.Ld_ratio})</td>
+                                </tr>
+                                <tr class="border-b border-slate-100">
+                                    <td class="p-2 font-medium text-slate-700">${t('beamType')}</td>
+                                    <td class="p-2 text-center font-bold text-slate-700" colspan="2">${res.beamType === 'simple' ? t('beamTypeSimple') : t('beamTypeContinuous')}</td>
+                                </tr>
+                                ${momentRows}
+                                <tr class="border-b border-slate-100">
+                                    <td class="p-2 font-medium text-slate-700">${t('bottom')}</td>
+                                    <td class="p-2 text-center font-black text-blue-800 dir-ltr text-lg">${res.n_bot}ϕ${res.bar_bot}</td>
+                                    <td class="p-2 text-center text-slate-600">${res.as_bot.toFixed(0)} mm²</td>
+                                </tr>
+                                <tr class="border-b border-slate-100">
+                                    <td class="p-2 font-medium text-slate-700">${t('top')}</td>
+                                    <td class="p-2 text-center font-black text-blue-800 dir-ltr text-lg">${res.n_top}ϕ${res.bar_top}</td>
+                                    <td class="p-2 text-center text-slate-600">${res.as_top.toFixed(0)} mm²</td>
+                                </tr>
+                                <tr class="border-b border-slate-100">
+                                    <td class="p-2 font-medium text-slate-700">${t('rho')}</td>
+                                    <td class="p-2 text-center font-mono" colspan="2">${res.rho.toFixed(2)}% (Min: ${res.rho_min.toFixed(2)}%, Max: ${res.rho_max.toFixed(2)}%)</td>
+                                </tr>
+                                <tr>
+                                    <td class="p-2 font-medium text-slate-700">${t('stirrups')}</td>
+                                    <td class="p-2 text-center font-black text-indigo-800 dir-ltr text-lg" colspan="2">${res.stirrups}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                `;
             }
             if (res.type === 'col_design') {
-                return `<table class="w-full text-sm">
-                    <tr class="border-b"><td class="p-2 font-bold text-slate-600">${t('mainReinf')}</td><td class="p-2 text-center font-black text-orange-800 dir-ltr text-lg">${res.n_bars}ϕ${res.bar}</td></tr>
-                    <tr class="border-b"><td class="p-2 font-bold text-slate-600">${t('ties')}</td><td class="p-2 text-center font-black text-slate-800 dir-ltr text-lg">ϕ${res.tie}@${res.s_tie}mm</td></tr>
-                    <tr><td class="p-2 font-bold text-slate-600">${t('status')}</td><td class="p-2 text-center font-bold ${res.status === t('safe') ? 'text-green-600' : 'text-red-600'}">${res.status}</td></tr>
-                </table>`;
+                let slendernessInfo = '';
+                if (!res.isShortColumn) {
+                    slendernessInfo = `
+                        <tr class="border-b border-slate-100">
+                            <td class="p-2 font-medium text-slate-700">Magnification Factor</td>
+                            <td class="p-2 text-center font-mono text-orange-600" colspan="2">${res.magnificationFactor}</td>
+                        </tr>
+                    `;
+                }
+                
+                return `
+                    <div class="p-4">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-slate-200">
+                                    <th class="text-right p-2 font-bold text-slate-600">${t('location')}</th>
+                                    <th class="text-center p-2 font-bold text-slate-600">${t('rebar')}</th>
+                                    <th class="text-center p-2 font-bold text-slate-600">${t('details')}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="border-b border-slate-100">
+                                    <td class="p-2 font-medium text-slate-700">${t('columnType')}</td>
+                                    <td class="p-2 text-center font-bold ${res.isShortColumn ? 'text-green-600' : 'text-orange-600'}" colspan="2">${res.columnType} (klu/r = ${res.klu_r})</td>
+                                </tr>
+                                ${slendernessInfo}
+                                <tr class="border-b border-slate-100">
+                                    <td class="p-2 font-medium text-slate-700">${t('mainReinf')}</td>
+                                    <td class="p-2 text-center font-black text-orange-800 dir-ltr text-lg">${res.n_bars}ϕ${res.bar}</td>
+                                    <td class="p-2 text-center text-slate-600">${res.rho.toFixed(2)}%</td>
+                                </tr>
+                                <tr class="border-b border-slate-100">
+                                    <td class="p-2 font-medium text-slate-700">${t('ties')}</td>
+                                    <td class="p-2 text-center font-black text-slate-800 dir-ltr text-lg">ϕ${res.tie}@${res.s_tie}mm</td>
+                                    <td class="p-2 text-center text-slate-600">${t('shearReinf')}</td>
+                                </tr>
+                                <tr>
+                                    <td class="p-2 font-medium text-slate-700">${t('status')}</td>
+                                    <td class="p-2 text-center font-bold ${res.status === t('safe') ? 'text-green-600' : 'text-red-600'}" colspan="2">${res.status}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                `;
             }
-            return `<table class="w-full text-sm">
-                <tr class="border-b"><td class="p-2 font-bold text-slate-600">${t('designMoment')}</td><td class="p-2 text-center font-mono">${res.mu.toFixed(2)} kN.m</td></tr>
-                <tr><td class="p-2 font-bold text-slate-600">${t('mesh')}</td><td class="p-2 text-center font-black text-teal-800 dir-ltr text-lg">ϕ${res.bar}@${res.sp}mm</td></tr>
-            </table>`;
+            if (res.type === 'slab_design') {
+                if (res.subtype === 'one_way') {
+                    return `
+                        <div class="p-4">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="border-b border-slate-200">
+                                        <th class="text-right p-2 font-bold text-slate-600">الوصف</th>
+                                        <th class="text-center p-2 font-bold text-slate-600">القيمة</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr class="border-b border-slate-100">
+                                        <td class="p-2 font-medium text-slate-700">${t('designMoment')}</td>
+                                        <td class="p-2 text-center font-mono font-bold">${res.mu.toFixed(2)} kN.m/m</td>
+                                    </tr>
+                                    <tr class="border-b border-slate-100">
+                                        <td class="p-2 font-medium text-slate-700">${t('reqSteel')}</td>
+                                        <td class="p-2 text-center font-mono font-bold">${res.as.toFixed(0)} mm²/m</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="p-2 font-medium text-slate-700">${t('mesh')}</td>
+                                        <td class="p-2 text-center font-black text-teal-800 dir-ltr text-lg">${res.design}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                }
+                else if (res.subtype === 'two_way') {
+                    return `
+                        <div class="p-4">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="border-b border-slate-200">
+                                        <th class="text-right p-2 font-bold text-slate-600">الاتجاه</th>
+                                        <th class="text-center p-2 font-bold text-slate-600">العزم (kN.m/m)</th>
+                                        <th class="text-center p-2 font-bold text-slate-600">التسليح</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr class="border-b border-slate-100">
+                                        <td class="p-2 font-medium text-slate-700">${t('shortDir')}</td>
+                                        <td class="p-2 text-center font-mono">${res.moments.short.toFixed(2)}</td>
+                                        <td class="p-2 text-center font-black text-teal-800 dir-ltr">ϕ${res.bar.short}@${res.spacing.short}mm</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="p-2 font-medium text-slate-700">${t('longDir')}</td>
+                                        <td class="p-2 text-center font-mono">${res.moments.long.toFixed(2)}</td>
+                                        <td class="p-2 text-center font-black text-teal-800 dir-ltr">ϕ${res.bar.long}@${res.spacing.long}mm</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                }
+                else if (res.subtype.includes('flat_slab')) {
+                    let tableRows = '';
+                    let beamRows = '';
+                    
+                    tableRows += `
+                        <tr class="border-b border-slate-100">
+                            <td class="p-2 font-medium text-slate-700">${t('totalMoment')}</td>
+                            <td class="p-2 text-center font-mono font-bold text-purple-600" colspan="2">${res.totalMoment.toFixed(2)} kN.m</td>
+                        </tr>
+                        <tr class="border-b border-slate-100">
+                            <td class="p-2 font-medium text-slate-700">${t('negativeMoment')}</td>
+                            <td class="p-2 text-center font-mono">${res.moments.negative.toFixed(2)} kN.m</td>
+                            <td class="p-2 text-center text-slate-600">65-75% من Mo</td>
+                        </tr>
+                        <tr class="border-b border-slate-100">
+                            <td class="p-2 font-medium text-slate-700">${t('positiveMoment')}</td>
+                            <td class="p-2 text-center font-mono">${res.moments.positive.toFixed(2)} kN.m</td>
+                            <td class="p-2 text-center text-slate-600">25-35% من Mo</td>
+                        </tr>
+                    `;
+                    
+                    if (res.reinforcement) {
+                        tableRows += `
+                            <tr class="border-b border-slate-100">
+                                <td class="p-2 font-medium text-slate-700">${t('columnStrip')} (-)</td>
+                                <td class="p-2 text-center font-black text-teal-800 dir-ltr">ϕ${res.reinforcement.colIntNeg.bar}@${res.reinforcement.colIntNeg.sp}mm</td>
+                                <td class="p-2 text-center text-slate-600">${res.reinforcement.colIntNeg.as.toFixed(0)} mm²/m</td>
+                            </tr>
+                            <tr class="border-b border-slate-100">
+                                <td class="p-2 font-medium text-slate-700">${t('middleStrip')} (-)</td>
+                                <td class="p-2 text-center font-black text-teal-800 dir-ltr">ϕ${res.reinforcement.midIntNeg.bar}@${res.reinforcement.midIntNeg.sp}mm</td>
+                                <td class="p-2 text-center text-slate-600">${res.reinforcement.midIntNeg.as.toFixed(0)} mm²/m</td>
+                            </tr>
+                            <tr class="border-b border-slate-100">
+                                <td class="p-2 font-medium text-slate-700">${t('columnStrip')} (+)</td>
+                                <td class="p-2 text-center font-black text-teal-800 dir-ltr">ϕ${res.reinforcement.colPos.bar}@${res.reinforcement.colPos.sp}mm</td>
+                                <td class="p-2 text-center text-slate-600">${res.reinforcement.colPos.as.toFixed(0)} mm²/m</td>
+                            </tr>
+                            <tr>
+                                <td class="p-2 font-medium text-slate-700">${t('middleStrip')} (+)</td>
+                                <td class="p-2 text-center font-black text-teal-800 dir-ltr">ϕ${res.reinforcement.midPos.bar}@${res.reinforcement.midPos.sp}mm</td>
+                                <td class="p-2 text-center text-slate-600">${res.reinforcement.midPos.as.toFixed(0)} mm²/m</td>
+                            </tr>
+                        `;
+                    }
+                    
+                    if (res.beamReinforcement && res.beamReinforcement.bars) {
+                        beamRows = `
+                            <tr class="border-b border-slate-100 bg-amber-50">
+                                <td class="p-2 font-medium text-slate-700"><strong>${t('beamReinforcement')}</strong></td>
+                                <td class="p-2 text-center font-black text-amber-800 dir-ltr text-lg" colspan="2">${res.beamReinforcement.bars}ϕ${res.beamReinforcement.barSize}</td>
+                            </tr>
+                        `;
+                    }
+
+                    return `
+                        <div class="p-4">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="border-b border-slate-200">
+                                        <th class="text-right p-2 font-bold text-slate-600">المنطقة</th>
+                                        <th class="text-center p-2 font-bold text-slate-600">التسليح</th>
+                                        <th class="text-center p-2 font-bold text-slate-600">المساحة</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${tableRows}
+                                    ${beamRows}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                }
+            }
+            if (res.type === 'deep_beam') {
+                return `
+                    <div class="p-4">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-slate-200">
+                                    <th class="text-right p-2 font-bold text-slate-600">المكون</th>
+                                    <th class="text-center p-2 font-bold text-slate-600">القيمة</th>
+                                    <th class="text-center p-2 font-bold text-slate-600">الحالة</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="border-b border-slate-100">
+                                    <td class="p-2 font-medium text-slate-700">${t('beamClassification')}</td>
+                                    <td class="p-2 text-center font-bold ${res.isDeepBeam ? 'text-violet-600' : 'text-blue-600'}" colspan="2">${res.beamType} (L/d = ${res.Ld_ratio})</td>
+                                </tr>
+                                <tr class="border-b border-slate-100">
+                                    <td class="p-2 font-medium text-slate-700">${t('supportType')}</td>
+                                    <td class="p-2 text-center font-mono" colspan="2">${res.supportConfig}</td>
+                                </tr>
+                                <tr class="border-b border-slate-100">
+                                    <td class="p-2 font-medium text-slate-700">${t('strutForce')}</td>
+                                    <td class="p-2 text-center font-mono">${res.strutForce.toFixed(1)} kN</td>
+                                    <td class="p-2 text-center font-mono ${res.strutCapacity >= res.strutForce ? 'text-green-600' : 'text-red-600'}">${res.strutCapacity.toFixed(1)} kN</td>
+                                </tr>
+                                <tr class="border-b border-slate-100">
+                                    <td class="p-2 font-medium text-slate-700">${t('tieForce')}</td>
+                                    <td class="p-2 text-center font-mono">${res.tieForce.toFixed(1)} kN</td>
+                                    <td class="p-2 text-center font-mono ${res.tieCapacity >= res.tieForce ? 'text-green-600' : 'text-red-600'}">${res.tieCapacity.toFixed(1)} kN</td>
+                                </tr>
+                                <tr class="border-b border-slate-100">
+                                    <td class="p-2 font-medium text-slate-700">${t('nodeCapacity')}</td>
+                                    <td class="p-2 text-center font-mono">${res.reaction.toFixed(1)} kN</td>
+                                    <td class="p-2 text-center font-mono ${res.nodeCapacity >= res.reaction ? 'text-green-600' : 'text-red-600'}">${res.nodeCapacity.toFixed(1)} kN</td>
+                                </tr>
+                                <tr class="border-b border-slate-100">
+                                    <td class="p-2 font-medium text-slate-700">${t('strutAngle')}</td>
+                                    <td class="p-2 text-center font-mono" colspan="2">${res.strutAngle}°</td>
+                                </tr>
+                                <tr class="border-b border-slate-100">
+                                    <td class="p-2 font-medium text-slate-700">${t('mainReinf')} (Tie)</td>
+                                    <td class="p-2 text-center font-black text-violet-800 dir-ltr text-lg" colspan="2">${res.numTieBars}ϕ${res.tieBar}</td>
+                                </tr>
+                                <tr class="border-b border-slate-100">
+                                    <td class="p-2 font-medium text-slate-700">${t('minVertReinf')}</td>
+                                    <td class="p-2 text-center font-black text-violet-800 dir-ltr" colspan="2">${res.vertReinf}</td>
+                                </tr>
+                                <tr class="border-b border-slate-100">
+                                    <td class="p-2 font-medium text-slate-700">${t('minHorzReinf')}</td>
+                                    <td class="p-2 text-center font-black text-violet-800 dir-ltr" colspan="2">${res.horzReinf}</td>
+                                </tr>
+                                <tr>
+                                    <td class="p-2 font-medium text-slate-700">${t('status')}</td>
+                                    <td class="p-2 text-center font-bold ${res.status === t('safe') ? 'text-green-600' : 'text-red-600'}" colspan="2">${res.status}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+            return '';
         }
 
-        // --- SVG Generators (Vanilla Strings) ---
-        function getBeamSVG(w, h, nt, nb, bt, bb) {
-            // Colors: Concrete Yellow #facc15, Stirrup Green #22c55e, Rebar Magenta #d946ef, Dim Red #ef4444, Text Yellow
+        // --- Enhanced SVG Generators ---
+        function getBeamSVG(w, h, nt, nb, bt, bb, beamType) {
+            const isContinuous = beamType === 'continuous';
+            
             return `<svg width="250" height="250" viewBox="0 0 300 300">
                 <rect x="50" y="50" width="200" height="200" fill="none" stroke="#facc15" stroke-width="2"/>
                 <rect x="60" y="60" width="180" height="180" fill="none" stroke="#22c55e" stroke-width="2" rx="5"/>
+                ${isContinuous ? `
+                    <!-- Continuous beam indicators -->
+                    <line x1="150" y1="50" x2="150" y2="250" stroke="#94a3b8" stroke-dasharray="4" stroke-width="1"/>
+                    <line x1="100" y1="50" x2="100" y2="250" stroke="#94a3b8" stroke-dasharray="4" stroke-width="1"/>
+                    <line x1="200" y1="50" x2="200" y2="250" stroke="#94a3b8" stroke-dasharray="4" stroke-width="1"/>
+                ` : ''}
                 ${Array.from({length: nt}).map((_,i) => `<circle cx="${70 + i*((160)/(nt>1?nt-1:1))}" cy="70" r="6" fill="#d946ef"/>`).join('')}
                 ${Array.from({length: nb}).map((_,i) => `<circle cx="${70 + i*((160)/(nb>1?nb-1:1))}" cy="230" r="8" fill="#d946ef"/>`).join('')}
-                <!-- Dims -->
                 <line x1="30" y1="50" x2="30" y2="250" stroke="#ef4444" /> <text x="25" y="150" fill="#facc15" text-anchor="end" font-size="14">${h}</text>
                 <line x1="50" y1="270" x2="250" y2="270" stroke="#ef4444" /> <text x="150" y="290" fill="#facc15" text-anchor="middle" font-size="14">${w}</text>
-                <!-- Labels -->
                 <text x="260" y="70" fill="#facc15" font-size="12">${nt}ϕ${bt}</text>
                 <text x="260" y="230" fill="#facc15" font-size="12">${nb}ϕ${bb}</text>
+                ${isContinuous ? `<text x="150" y="40" fill="#94a3b8" font-size="10" text-anchor="middle">Continuous</text>` : ''}
             </svg>`;
         }
 
@@ -804,23 +2289,92 @@
                 <rect x="60" y="60" width="180" height="180" fill="none" stroke="#22c55e" stroke-width="2" rx="2"/>
                 <circle cx="70" cy="70" r="6" fill="#d946ef"/> <circle cx="230" cy="70" r="6" fill="#d946ef"/>
                 <circle cx="70" cy="230" r="6" fill="#d946ef"/> <circle cx="230" cy="230" r="6" fill="#d946ef"/>
-                <!-- Simplified bars -->
                 ${n > 4 ? `<circle cx="150" cy="70" r="6" fill="#d946ef"/><circle cx="150" cy="230" r="6" fill="#d946ef"/>` : ''}
+                ${n > 6 ? `<circle cx="70" cy="150" r="6" fill="#d946ef"/><circle cx="230" cy="150" r="6" fill="#d946ef"/>` : ''}
                 <text x="150" y="150" fill="#22c55e" text-anchor="middle" font-size="12">ϕ${tie}@${s}</text>
                 <text x="25" y="150" fill="#facc15" text-anchor="end" font-size="14">${h}</text>
                 <text x="150" y="280" fill="#facc15" text-anchor="middle" font-size="14">${w}</text>
             </svg>`;
         }
         
-        function getSlabSVG(h, bar, sp, two) {
+        function getOneWaySlabSVG(h, bar, spacing) {
              return `<svg width="250" height="150" viewBox="0 0 300 150">
                 <rect x="10" y="40" width="280" height="80" fill="none" stroke="#facc15" stroke-width="2"/>
                 <line x1="50" y1="100" x2="250" y2="100" stroke="#22c55e" stroke-width="2"/>
                 ${[50,100,150,200,250].map(x => `<circle cx="${x}" cy="100" r="5" fill="#d946ef"/>`).join('')}
-                ${two ? `<line x1="50" y1="90" x2="250" y2="90" stroke="#d946ef" stroke-dasharray="4" />` : ''}
                 <text x="30" y="80" fill="#facc15" text-anchor="end" font-size="12">h=${h}</text>
-                <text x="150" y="140" fill="#facc15" text-anchor="middle" font-size="12">ϕ${bar}@${sp}</text>
+                <text x="150" y="140" fill="#facc15" text-anchor="middle" font-size="12">ϕ${bar}@${spacing}</text>
              </svg>`;
+        }
+
+        function getTwoWaySlabSVG(h, bar, spacing) {
+            return `<svg width="250" height="250" viewBox="0 0 300 300">
+                <rect x="50" y="50" width="200" height="200" fill="none" stroke="#facc15" stroke-width="2"/>
+                <line x1="50" y1="100" x2="250" y2="100" stroke="#22c55e" stroke-width="2"/>
+                <line x1="50" y1="200" x2="250" y2="200" stroke="#22c55e" stroke-width="2"/>
+                <line x1="100" y1="50" x2="100" y2="250" stroke="#d946ef" stroke-width="2"/>
+                <line x1="200" y1="50" x2="200" y2="250" stroke="#d946ef" stroke-width="2"/>
+                <text x="150" y="280" fill="#facc15" text-anchor="middle" font-size="12">Two-Way Slab</text>
+                <text x="260" y="100" fill="#22c55e" font-size="10">ϕ${bar.short}@${spacing.short}</text>
+                <text x="100" y="30" fill="#d946ef" font-size="10">ϕ${bar.long}@${spacing.long}</text>
+            </svg>`;
+        }
+
+        function getFlatSlabSVG(h, reinforcement, details) {
+            return `<svg width="250" height="250" viewBox="0 0 300 300">
+                <rect x="50" y="50" width="200" height="200" fill="none" stroke="#facc15" stroke-width="2"/>
+                <rect x="75" y="75" width="50" height="50" fill="none" stroke="#22c55e" stroke-dasharray="4"/>
+                <rect x="175" y="75" width="50" height="50" fill="none" stroke="#22c55e" stroke-dasharray="4"/>
+                <rect x="75" y="175" width="50" height="50" fill="none" stroke="#22c55e" stroke-dasharray="4"/>
+                <rect x="175" y="175" width="50" height="50" fill="none" stroke="#22c55e" stroke-dasharray="4"/>
+                ${details.dropPanels ? `
+                    <rect x="60" y="60" width="80" height="80" fill="none" stroke="#f59e0b" stroke-width="3"/>
+                    <rect x="160" y="60" width="80" height="80" fill="none" stroke="#f59e0b" stroke-width="3"/>
+                    <rect x="60" y="160" width="80" height="80" fill="none" stroke="#f59e0b" stroke-width="3"/>
+                    <rect x="160" y="160" width="80" height="80" fill="none" stroke="#f59e0b" stroke-width="3"/>
+                ` : ''}
+                ${details.beams ? `
+                    <rect x="50" y="120" width="200" height="10" fill="#dc2626" stroke="#b91c1c" stroke-width="1"/>
+                    <rect x="120" y="50" width="10" height="200" fill="#dc2626" stroke="#b91c1c" stroke-width="1"/>
+                ` : ''}
+                <text x="150" y="280" fill="#facc15" text-anchor="middle" font-size="12">Flat Slab</text>
+                <text x="100" y="100" fill="#22c55e" font-size="8" text-anchor="middle">ϕ${reinforcement.colIntNeg.bar}@${reinforcement.colIntNeg.sp}</text>
+            </svg>`;
+        }
+
+        function getDeepBeamSVG(w, h, angle, numBars, barSize, supportConfig) {
+            const isCantilever = supportConfig === 'Cantilever';
+            
+            return `<svg width="250" height="250" viewBox="0 0 300 300">
+                <rect x="50" y="50" width="200" height="200" fill="none" stroke="#facc15" stroke-width="3"/>
+                
+                ${isCantilever ? `
+                    <!-- Cantilever Deep Beam -->
+                    <rect x="50" y="50" width="30" height="200" fill="#4b5563" stroke="#1f2937" stroke-width="2"/>
+                    <line x1="80" y1="150" x2="200" y2="50" stroke="#8b5cf6" stroke-width="3" marker-end="url(#arrow)"/>
+                    <line x1="200" y1="50" x2="250" y2="150" stroke="#8b5cf6" stroke-width="3" marker-end="url(#arrow)"/>
+                    <line x1="200" y1="50" x2="200" y2="100" stroke="#ef4444" stroke-width="3" marker-end="url(#arrow)"/>
+                ` : `
+                    <!-- Simply Supported Deep Beam -->
+                    <rect x="50" y="50" width="30" height="200" fill="#4b5563" stroke="#1f2937" stroke-width="2"/>
+                    <rect x="220" y="50" width="30" height="200" fill="#4b5563" stroke="#1f2937" stroke-width="2"/>
+                    <line x1="80" y1="250" x2="150" y2="50" stroke="#8b5cf6" stroke-width="3" marker-end="url(#arrow)"/>
+                    <line x1="150" y1="50" x2="220" y2="250" stroke="#8b5cf6" stroke-width="3" marker-end="url(#arrow)"/>
+                    <line x1="150" y1="50" x2="150" y2="150" stroke="#ef4444" stroke-width="3" marker-end="url(#arrow)"/>
+                `}
+                
+                <defs>
+                    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+                        <path d="M0,0 L0,6 L9,3 z" fill="#8b5cf6"/>
+                    </marker>
+                </defs>
+                
+                <text x="150" y="30" fill="#8b5cf6" font-size="10" text-anchor="middle">Strut</text>
+                <text x="${isCantilever ? '200' : '150'}" y="120" fill="#ef4444" font-size="10" text-anchor="middle">Tie</text>
+                <text x="150" y="280" fill="#facc15" text-anchor="middle" font-size="12">Deep Beam</text>
+                <text x="150" y="200" fill="#22c55e" font-size="10" text-anchor="middle">${numBars}ϕ${barSize}</text>
+                <text x="150" y="220" fill="#22c55e" font-size="8" text-anchor="middle">${angle}°</text>
+            </svg>`;
         }
 
         // --- Interaction ---
@@ -837,14 +2391,22 @@
                 content.innerHTML = `<div class="text-center text-slate-400 py-8">${t('noHistory')}</div>`;
             } else {
                 content.innerHTML = `
-                    <div class="flex justify-end mb-2"><button onclick="clearHistory()" class="text-xs text-red-500 border border-red-200 px-2 py-1 rounded hover:bg-red-50">${t('clearHistory')}</button></div>
+                    <div class="flex justify-between items-center mb-4">
+                        <button onclick="clearHistory()" class="text-xs text-red-500 border border-red-200 px-3 py-1 rounded hover:bg-red-50 flex items-center gap-1"><i data-lucide="trash-2" class="w-3 h-3"></i> ${t('clearHistory')}</button>
+                        <button onclick="exportAllToPDF()" class="text-xs text-blue-500 border border-blue-200 px-3 py-1 rounded hover:bg-blue-50 flex items-center gap-1"><i data-lucide="download" class="w-3 h-3"></i> ${t('exportToPDF')}</button>
+                    </div>
                     <div class="space-y-3">
                         ${filtered.map(item => `
-                            <div class="p-3 rounded border border-slate-100 bg-slate-50 relative group">
+                            <div class="p-3 rounded border border-slate-100 bg-slate-50 relative group hover:bg-white transition-colors">
                                 <button onclick="deleteHistory(${item.id})" class="absolute top-2 ${state.lang==='ar'?'left-2':'right-2'} text-slate-300 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                                <div class="font-bold text-sm text-slate-800">${item.elementName}</div>
-                                <div class="text-xs text-slate-400">${new Date(item.date).toLocaleString()}</div>
-                                <div class="font-mono font-bold text-blue-900 mt-1 dir-ltr text-right">${item.result}</div>
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <div class="font-bold text-sm text-slate-800">${item.elementName}</div>
+                                        <div class="text-xs text-slate-400">${new Date(item.date).toLocaleString()}</div>
+                                        <div class="font-mono font-bold text-blue-900 mt-1 dir-ltr text-right">${item.result}</div>
+                                    </div>
+                                    <button onclick="openDetailedHistory(${item.id})" class="text-slate-400 hover:text-slate-600"><i data-lucide="eye" class="w-4 h-4"></i></button>
+                                </div>
                             </div>
                         `).join('')}
                     </div>
@@ -854,6 +2416,73 @@
             modal.classList.remove('hidden');
             modal.classList.add('flex');
             lucide.createIcons();
+        }
+
+        function openDetailedHistory(id) {
+            const item = state.history.find(h => h.id === id);
+            if (!item) return;
+            
+            const modal = document.getElementById('modal');
+            const content = document.getElementById('modal-content');
+            document.getElementById('modal-title').innerText = `${item.elementName} - ${t(item.type + 'Title')}`;
+            
+            let detailsHtml = '';
+            
+            if (item.details) {
+                detailsHtml = `
+                    <div class="eng-sheet p-6 rounded-lg mt-4">
+                        <div class="eng-header p-4 rounded-t-lg mb-4">
+                            <h3 class="text-xl font-bold text-white text-center">${t('proofTitle')}</h3>
+                            <div class="text-white text-sm text-center opacity-80">${item.elementName} - ${new Date(item.date).toLocaleString()}</div>
+                        </div>
+                        
+                        <div class="space-y-4">
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="bg-white p-3 rounded border border-slate-200">
+                                    <div class="text-sm text-slate-500">Element Type</div>
+                                    <div class="font-bold">${t(item.type + 'Title')}</div>
+                                </div>
+                                <div class="bg-white p-3 rounded border border-slate-200">
+                                    <div class="text-sm text-slate-500">Result</div>
+                                    <div class="font-bold font-mono">${item.result}</div>
+                                </div>
+                            </div>
+                            
+                            ${item.details.proof ? `
+                                <div class="bg-white p-4 rounded border border-slate-200">
+                                    <h4 class="font-bold text-slate-800 mb-3 border-b pb-2">Detailed Calculations</h4>
+                                    <div class="space-y-3">
+                                        ${item.details.proof.map(step => `
+                                            <div class="border-l-4 border-blue-500 pl-3 py-1">
+                                                <div class="font-bold text-slate-700">${step.t}</div>
+                                                <div class="eng-formula text-sm mt-1">${step.f}</div>
+                                                <div class="text-slate-600 text-xs mt-1">${step.c}</div>
+                                                <div class="font-bold text-slate-900 mt-1">${step.r}</div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+                            
+                            ${item.details.design ? `
+                                <div class="bg-white p-4 rounded border border-slate-200">
+                                    <h4 class="font-bold text-slate-800 mb-3 border-b pb-2">Final Design</h4>
+                                    <div class="font-mono bg-slate-100 p-3 rounded border">${item.details.design}</div>
+                                </div>
+                            ` : ''}
+                        </div>
+                        
+                        <div class="text-center text-xs text-slate-500 mt-6 pt-4 border-t">
+                            SA CIVIL - Structural Design Platform<br>
+                            Generated on ${new Date(item.date).toLocaleString()}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            content.innerHTML = detailsHtml;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
         }
 
         function closeModal() {
@@ -867,16 +2496,27 @@
             document.getElementById('modal-title').innerText = t('proofTitle');
             
             content.innerHTML = `
-                <div class="font-mono text-sm space-y-6 text-left dir-ltr bg-white p-2" style="font-family: 'Times New Roman', serif;">
-                    ${proofData.map(p => `
-                        <div class="border-l-2 border-slate-800 pl-3">
-                            <div class="font-bold underline decoration-slate-400 decoration-2 underline-offset-4 mb-1">${p.t}</div>
-                            <div class="text-blue-800 italic mb-1">${p.f}</div>
-                            <div class="text-slate-600 text-xs mb-1">${p.c}</div>
-                            <div class="font-bold bg-slate-100 inline-block px-2 border border-slate-300 text-lg">= ${p.r}</div>
-                        </div>
-                    `).join('')}
-                    <div class="text-center text-xs text-slate-400 border-t pt-4 mt-4">Generated by SA CIVIL</div>
+                <div class="eng-sheet p-6 rounded-lg">
+                    <div class="eng-header p-4 rounded-t-lg mb-6">
+                        <h3 class="text-xl font-bold text-white text-center">${t('proofTitle')}</h3>
+                        <div class="text-white text-sm text-center opacity-80">${state.currentElementName} - ${new Date().toLocaleString()}</div>
+                    </div>
+                    
+                    <div class="space-y-6">
+                        ${proofData.map(p => `
+                            <div class="bg-white p-4 rounded border border-slate-200 shadow-sm">
+                                <div class="font-bold text-slate-800 text-lg mb-2 border-b pb-2">${p.t}</div>
+                                <div class="eng-formula text-sm mb-2">${p.f}</div>
+                                <div class="text-slate-600 text-sm mb-2">${p.c}</div>
+                                <div class="font-bold text-slate-900 text-lg bg-slate-100 p-2 rounded border border-slate-300 text-center">${p.r}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    
+                    <div class="text-center text-xs text-slate-500 mt-8 pt-4 border-t">
+                        SA CIVIL - Structural Design Platform<br>
+                        ACI 318-19 Compliant Calculations
+                    </div>
                 </div>
             `;
             
@@ -890,18 +2530,86 @@
             resDiv.classList.remove('hidden');
             resDiv.innerText = t('aiLoading');
             
-            // Mocking AI response for static file, replace URL with real proxy if needed.
-            // In real app, use the fetch logic provided in React code.
-            // Since this is a static file without backend, I will show a simulation or need API key input.
-            // For safety in this demo, I'll simulate a response.
-            
             setTimeout(() => {
-                 resDiv.innerText = "AI Analysis: Based on ACI 318, the design appears adequate. Ensure development length is checked. (Simulation)";
+                 resDiv.innerText = "AI Analysis: Based on ACI 318-19, the design appears adequate. Ensure development length is checked. (Simulation)";
             }, 1500);
+        }
+
+        // --- Export All History to PDF ---
+        function exportAllToPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('p', 'mm', 'a4');
+            const filtered = state.history.filter(h => h.type === state.mode);
+            
+            if (filtered.length === 0) {
+                alert("No history to export");
+                return;
+            }
+            
+            // Add header
+            doc.setFontSize(16);
+            doc.setFont('helvetica', 'bold');
+            doc.text('SA CIVIL - Design History Report', 105, 20, { align: 'center' });
+            
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Type: ${t(state.mode + 'Title')}`, 20, 35);
+            doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, 42);
+            doc.text(`Total Items: ${filtered.length}`, 20, 49);
+            
+            let yPos = 65;
+            
+            filtered.forEach((item, index) => {
+                if (yPos > 270) {
+                    doc.addPage();
+                    yPos = 20;
+                }
+                
+                doc.setFontSize(14);
+                doc.setFont('helvetica', 'bold');
+                doc.text(`${index + 1}. ${item.elementName}`, 20, yPos);
+                yPos += 7;
+                
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'normal');
+                doc.text(`Date: ${new Date(item.date).toLocaleString()}`, 20, yPos);
+                yPos += 5;
+                doc.text(`Result: ${item.result}`, 20, yPos);
+                yPos += 5;
+                
+                if (item.details && item.details.proof) {
+                    doc.text('Key Calculations:', 20, yPos);
+                    yPos += 5;
+                    
+                    item.details.proof.forEach(step => {
+                        if (yPos > 270) {
+                            doc.addPage();
+                            yPos = 20;
+                        }
+                        
+                        doc.text(`- ${step.t}: ${step.r}`, 25, yPos);
+                        yPos += 5;
+                    });
+                }
+                
+                yPos += 10;
+            });
+            
+            // Add watermark
+            doc.setFontSize(8);
+            doc.setTextColor(200, 200, 200);
+            doc.text('SA CIVIL - Eng. Sohaib Al-Nuaimi', 105, 290, { align: 'center' });
+            
+            // Save the PDF
+            doc.save(`SA_CIVIL_${state.mode}_History_${new Date().toISOString().slice(0,10)}.pdf`);
+            
+            // Show success message
+            alert(t('exportSuccess'));
         }
 
         // --- Init ---
         window.onload = () => {
+            loadHistory();
             renderApp();
         };
     </script>
